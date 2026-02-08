@@ -1,0 +1,63 @@
+Module 3 Results of CPU/GPU Branched/Non-Branched Experiments
+
+Increasing the number of threads has a clear effect on CPU and GPU performance. 
+For the CPU, as the number of elements increases, execution time grows roughly linearly. 
+The branched CPU code is consistently slower than the branch-free version, reflecting the cost of conditional branching. 
+Exact results for the CPU are:
+    - 512 elements – branch-free = 0.002 ms, branched = 0.005 ms
+    - 10,000 elements – branch-free = 0.042 ms, branched = 0.115 ms
+    - 1,048,576 elements – branch-free = 4.744 ms, branched = 11.655 ms
+    - 5,000,000 elements – branch-free = 22.374 ms, branched = 55.589 ms
+
+As for the GPU implementation, execution times remain extremely low even with millions of threads, and branch-free and branched 
+kernels have very similar execution times for large datasets, indicating that GPUs handle simple branching efficiently.
+For very small datasets, such as 512 threads, GPU overhead dominates, so GPU execution is slower than CPU.
+
+The block size affects how the GPU schedules threads across its cores. In these tests, changing the block size slightly did not dramatically 
+change execution time because the kernel is very light.
+However, if the block size were to change dramatically, smaller blocks could increase execution time due to scheduling overhead 
+and underutilization of GPU cores, while very large blocks could exceed hardware limits per block, cause some threads to remain idle, 
+or reduce concurrent occupancy, also potentially increasing runtime.
+Therefore, choosing a block size that balances hardware utilization and thread distribution 
+is important for performance, especially for heavier or more memory-intensive kernels.
+
+Additionally, the GPU branch-free and branched kernels show very similar execution times in these particular tests. 
+This is because the branching in the kernel is very simple and regular (checking if a number is even or odd), so this didn't cause much overhead.
+For more complex branching or irregular data patterns, branch divergence could significantly slow down GPU execution.
+
+Exact GPU results are:
+    - 512 threads, block size 256 – branch-free = 0.113664 ms, branched = 0.021472 ms
+    - 10,000 threads, block size 256 – branch-free = 0.112704 ms, branched = 0.036064 ms
+    - 1,048,576 threads, block size 128 – branch-free = 0.075520 ms, branched = 0.074336 ms
+    - 1,048,576 threads, block size 256 – branch-free = 0.074336 ms, branched = 0.074560 ms
+    - 1,048,576 threads, block size 512 – branch-free = 0.072448 ms, branched = 0.074560 ms
+    - 5,000,000 threads, block size 128 – branch-free = 0.201600 ms, branched = 0.238080 ms
+    - 5,000,000 threads, block size 256 – branch-free = 0.206880 ms, branched = 0.237696 ms
+    - 5,000,000 threads, block size 512 – branch-free = 0.215808 ms, branched = 0.233792 ms
+
+From these results, we can see that:
+    - Increasing block size on the GPU while keeping total threads constant slightly affects execution time. 
+        - In this case, it seems that it was negative impact in the 1M branched/5M branch-free cases, and positve in 1M branch-free/5M branched cases
+        - I would guess that repeating this experiment with more dramatic block sizes would have more clear/obvious results indicating impact on the GPU
+            - I would guess that: smaller block sizes would result in more blocks and slightly higher overhead due to kernel launch and scheduling.
+    - Differences between branched and branch-free kernels are minor, showing that large datasets benefit from GPU parallelism regardless of simple branching.
+        - For more complex branching, or even larger datasets, I would anticipate that branching logic would have a more dramatic negative effect on the results
+Takeaways:
+    - CPU execution scales linearly with data size, and branched code is slower, while GPU execution is extremely fast for large datasets and largely insensitive to simple branching (but anticpate that more complex branching would yield negative results).
+    - Small datasets favor CPU due to GPU launch overhead.
+    - Block size has a minor effect on this kernel because it is very lightweight; however, careful selection of block size is important for heavier or more complex GPU kernels to ensure optimal hardware utilization.
+
+***************************************************************
+Analysis of previous submission:
+The Good:
+1. Uses argc/argv to let the user change the number of blocks and threads without recompiling
+2. Does a good job of allocating device memory, copying data to the GPU, launching the kernel, and freeing memory afterward
+3. Includes both GPU (add) and CPU (addHost) computations in the same execution which does allow for ease of comparison for the assignment (I did have two separate ones...)
+
+The Bad:
+1. GPU kernel launches are asynchronous, so measuring stop time immediately after the launch does not reflect actual computation time. 
+    - Should probably use cudaDeviceSynchronize() get correct GPU timing.
+2. Large arrays declared on the stack (int a[N]) could cause a segmentation fault for large N, especially when we are dealing with millions of data points
+    - Heap allocation would probably be safter in this case (would also need to free this memory after)
+3. The total number of threads launched on the GPU is blocks × threads per block, so if this number is less than the total number of elements N, some elements of the arrays are never processed by the GPU kernel. 
+    - Therefore, the GPU only computes a partial result, while the CPU processes all N elements, so the GPU/CPU comparision is not completely correct
