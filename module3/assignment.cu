@@ -14,10 +14,16 @@
  */
 __global__ void transform_kernel(int *x, int *y, int N)
 {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    // Bounds checking - not considered branchy
-	if(idx < N)
-        y[idx] = x[idx] * 2 + 3;
+
+	int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    
+	// Grid-stride loops ensure every element gets processed, even if totalThreads > numBlocks * blockSize.
+	int stride = blockDim.x * gridDim.x;
+
+    for(int i = idx; i < N; i += stride)
+    {
+        y[i] = x[i] * 2 + 3;
+    }
 }
 
 
@@ -36,14 +42,16 @@ __global__ void transform_kernel(int *x, int *y, int N)
 __global__ void transform_branch_kernel(int *x, int *y, int N)
 {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    // Bounds checking - not the actual branching
-	if(idx < N)
+    
+	// Grid-stride loops ensure every element gets processed, even if totalThreads > numBlocks * blockSize.
+	int stride = blockDim.x * gridDim.x;
+
+    for(int i = idx; i < N; i += stride)
     {
-		// the branching logic on odd/even idx
-        if(x[idx] % 2 == 0)
-            y[idx] = x[idx] * 2;
+        if(x[i] % 2 == 0)
+            y[i] = x[i] * 2;
         else
-            y[idx] = x[idx] * 3;
+            y[i] = x[i] * 3;
     }
 }
 
