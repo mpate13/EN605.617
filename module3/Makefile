@@ -6,16 +6,16 @@ NVCC = $(CUDA_PATH)/bin/nvcc
 CC = gcc
 
 # --- Targets ---
-all: assignment assignment_cpu
+all: assignment.exe assignment_cpu.exe
 
 # GPU version (from assignment.cu)
-assignment: assignment.cu
-	$(NVCC) -o assignment assignment.cu
+assignment.exe: assignment.cu
+	$(NVCC) -o assignment.exe assignment.cu
 
 # CPU version (from assignment.c)
-assignment_cpu: assignment.c
-	$(CC) -o assignment_cpu assignment.c
+assignment_cpu.exe: assignment.c
+	$(CC) -o assignment_cpu.exe assignment.c
 
 # Clean both executables
 clean:
-	rm -f assignment assignment_cpu
+	rm -f assignment.exe assignment_cpu.exe
