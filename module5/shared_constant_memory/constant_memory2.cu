@@ -162,7 +162,7 @@ __host__ void gpu_kernel(void)
 			cudaEventElapsedTime(&delta_time1, kernel_start1, kernel_stop1);
 
 			//cudaMemcpyToSymbol(gmem_data_gpu, const_data_host, KERNEL_LOOP * sizeof(u32));
-			cudaMemcpyToSymbol(const_data_gpu, const_data_host, CONST_ARRAY_SIZE * sizeof(u32));
+			cudaMemcpyToSymbol(gmem_data_gpu, const_data_host, CONST_ARRAY_SIZE * sizeof(u32));
 			const_test_gpu_const<<< num_blocks, num_threads >>>(data_gpu, num_elements);
 
 			cuda_error_check("Error ", " returned from literal startup  kernel!");
