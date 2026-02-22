@@ -9,6 +9,7 @@ typedef unsigned int u32;
 #define MAX_NUM_LISTS 16
 
 __device__ void merge_array5(const u32 * const src_array, u32 * const dest_array, const u32 num_lists, const u32 num_elements, const u32 tid);
+__device__ void merge_array6(const u32 * const src_array, u32 * const dest_array, const u32 num_lists, const u32 num_elements, const u32 tid);
 __host__ void cpu_sort(u32 * const data, const u32 num_elements)
 {
 	static u32 cpu_tmp_0[NUM_ELEMENTS];
