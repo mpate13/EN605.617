@@ -220,12 +220,10 @@ void print_report(int blks, int thr, int n, int match, double cpu, float gpu)
     printf("TEST CONFIGURATION: %d Blocks | %d Threads/Block\n", blks, thr);
     printf("TOTAL PARALLEL THREADS: %d\n", n);
     printf("Validation: %d/%d points matched CPU results.\n", match, n);
-    printf("MEMORY ENGAGED: Host, Global, Constant, Shared, Registers\n");
     printf("----------------------------------------------\n");
     printf("Host (CPU) Time:       %10.4f ms\n", cpu);
     printf("Device (GPU) Time:     %10.4f ms\n", gpu);
     printf("Speedup Ratio:         %10.2fx\n", cpu / (double)gpu);
-    printf("RESULT: GPU is outperforming CPU by %.4fms\n", cpu - gpu);
     printf("==============================================\n");
 }
 
