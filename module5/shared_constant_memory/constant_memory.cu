@@ -11,7 +11,7 @@
 #include <stdlib.h>
 #include <assert.h>
 
-#define KERNEL_LOOP 65536
+#define KERNEL_LOOP 2000000
 
 #define WORK_SIZE 256
 
@@ -217,3 +217,19 @@ int main(void) {
 	gpu_kernel(); // This runs the actual timing comparison loops
 	return 0;
 }
+
+/*
+Default:
+ID: 0 Tesla T4:Constant version is faster by: 0.01ms (Const=0.01ms vs. Literal=0.00ms)
+ID: 0 Tesla T4:Constant version is faster by: 0.01ms (Const=0.01ms vs. Literal=0.00ms)
+ID: 0 Tesla T4:Constant version is faster by: 0.01ms (Const=0.01ms vs. Literal=0.00ms)
+ID: 0 Tesla T4:Constant version is faster by: 0.01ms (Const=0.01ms vs. Literal=0.00ms)
+ID: 0 Tesla T4:Constant version is faster by: 0.01ms (Const=0.01ms vs. Literal=0.00ms)
+ID: 0 Tesla T4:Constant version is faster by: 0.01ms (Const=0.01ms vs. Literal=0.00ms)
+
+
+Num elements: 2,000,000
+
+
+
+*/
