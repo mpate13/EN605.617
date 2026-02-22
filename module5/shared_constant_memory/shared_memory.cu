@@ -10,6 +10,8 @@ typedef unsigned int u32;
 
 __device__ void merge_array5(const u32 * const src_array, u32 * const dest_array, const u32 num_lists, const u32 num_elements, const u32 tid);
 __device__ void merge_array6(const u32 * const src_array, u32 * const dest_array, const u32 num_lists, const u32 num_elements, const u32 tid);
+__device__ void merge_array9(const u32 * const src_array, u32 * const dest_array, const u32 num_lists, const u32 num_elements, const u32 tid);
+
 __host__ void cpu_sort(u32 * const data, const u32 num_elements)
 {
 	static u32 cpu_tmp_0[NUM_ELEMENTS];
@@ -263,7 +265,7 @@ __global__ void gpu_sort_array_array(u32 * const data,
 
 	//merge_array1(sort_tmp, data, num_lists, num_elements, tid);
 	//merge_array5(sort_tmp, data, num_lists, num_elements, tid);
-	merge_array6(sort_tmp, data, num_lists, num_elements, tid);
+	merge_array9(sort_tmp, data, num_lists, num_elements, tid);
 }
 
 // Uses multiple threads for merge
@@ -632,4 +634,24 @@ Input: 2042 -> Output: 2042
 Input: 2041 -> Output: 2041
 Input: 2040 -> Output: 2040
 Input: 2039 -> Output: 2039
+
+
+merge_array6: Launching Shared Memory Kernel with NUM_ELEMENTS: 2048
+
+----------------------------------------------
+SHRED MEMORY ANALYSIS:
+Time taken: 31.250368 ms
+----------------------------------------------
+Input: 2048 -> Output: 2048
+Input: 2047 -> Output: 2047
+Input: 2046 -> Output: 2046
+Input: 2045 -> Output: 2045
+Input: 2044 -> Output: 2044
+Input: 2043 -> Output: 2043
+Input: 2042 -> Output: 2042
+Input: 2041 -> Output: 2041
+Input: 2040 -> Output: 2040
+Input: 2039 -> Output: 2039
+
+
 */
