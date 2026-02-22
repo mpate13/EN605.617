@@ -20,10 +20,6 @@ typedef unsigned int u32;
 #define CONST_ARRAY_SIZE 10    // How many numbers we store (keep this small)
 #define ITERATION_COUNT 100000 // How many times we loop (make this big)
 
-// Use the small size for the memory allocation
-__constant__ u32 const_data_gpu[CONST_ARRAY_SIZE];
-__device__ static u32 gmem_data_gpu[CONST_ARRAY_SIZE];
-static u32 const_data_host[CONST_ARRAY_SIZE];
 
 #define KERNEL_LOOP 100000
 
