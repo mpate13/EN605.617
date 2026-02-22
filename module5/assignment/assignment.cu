@@ -42,59 +42,57 @@ __constant__ float c_centroids_x[MAX_CLUSTERS];
 __constant__ float c_centroids_y[MAX_CLUSTERS];
 
 /**
- * The memory path, as discussed in lecture
- * Path: Global -> Shared -> Registers -> Global (with constant lookups)
+ * Logic for calculating the closest centroid for a single point.
+ * Uses constant memory for centroids and registers for math.
  */
-__global__ void kmeans_gpu_kernel(float *d_x, float *d_y, int *d_cluster, 
-                                   int n_points, int k) {
-    
-    int tid = blockIdx.x * blockDim.x + threadIdx.x;
-    int local_id = threadIdx.x;
-
-    // Check threads don't access memory outside of n_points
-    if (tid >= n_points) return;
-
-    /**
-     * SHARED MEMORY:
-     * Shared by threads within the same block.
-     * Partitioned into two arrays for X and Y coordinates.
-     */
-    extern __shared__ float s_data[]; 
-    float *s_x = &s_data[0];
-    float *s_y = &s_data[blockDim.x];
-
-    // Load from Global Memory to Shared Memory
-    s_x[local_id] = d_x[tid];
-    s_y[local_id] = d_y[tid];
-
-    // Synchronize to ensure all threads have finished loading 
-    // before math begins
-    __syncthreads(); 
-
-    /**
-     * REGISTERS:
-     * Thread-private variables used for the fast math
-     */
-    float px = s_x[local_id];
-    float py = s_y[local_id];
+__device__ int find_nearest_cluster(float px, float py, int k)
+{
     float min_dist = FLT_MAX;
     int best_cluster = -1;
 
-    // Calculate distances using Registers and 
-    // Constant Memory Centroids (lookups)
-    for (int i = 0; i < k; i++) {
+    for (int i = 0; i < k; i++)
+    {
         float dx = px - c_centroids_x[i];
         float dy = py - c_centroids_y[i];
-        float dist = (dx * dx) + (dy * dy); // squared euclidean distance
+        float dist = (dx * dx) + (dy * dy);
 
-        if (dist < min_dist) {
+        if (dist < min_dist)
+        {
             min_dist = dist;
             best_cluster = i;
         }
     }
+    return best_cluster;
+}
 
-    // Write final assignment back to Global Memory
-    d_cluster[tid] = best_cluster;
+/**
+ * Handles memory staging and thread indexing.
+ */
+__global__ void kmeans_gpu_kernel(float *d_x, float *d_y, int *d_cluster, 
+                                   int n_points, int k)
+{
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    int local_id = threadIdx.x;
+
+    if (tid >= n_points)
+    {
+        return;
+    }
+
+    // Shared Memory Staging
+    extern __shared__ float s_data[];
+    float *s_x = &s_data[0];
+    float *s_y = &s_data[blockDim.x];
+
+    s_x[local_id] = d_x[tid];
+    s_y[local_id] = d_y[tid];
+
+    __syncthreads();
+
+    // Call the device function for the actual calculation
+    int assignment = find_nearest_cluster(s_x[local_id], s_y[local_id], k);
+
+    d_cluster[tid] = assignment;
 }
 
 // Host CPU implementation for validation and speedup comparison
@@ -116,113 +114,128 @@ void kmeans_cpu(float *x, float *y, int *cluster, float *cx,
     }
 }
 
-void run_benchmark(int blocks, int threads) {
-    // Querying actual hardware for some of safety checks... 
-    // (ensure there are not more threads than the limit, etc)
+/**
+ * Helper to ensure requested threads and shared memory fit the hardware.
+ */
+int validate_hardware(int threads, size_t shared_mem_size)
+{
     cudaDeviceProp prop;
     cudaGetDeviceProperties(&prop, 0);
 
-    // Hardware limit checks (safety)
-    if (threads > prop.maxThreadsPerBlock || threads <= 0) {
-        printf("Error: Threads per block (%d) exceeds GPU limit (%d).\n", 
+    if (threads > prop.maxThreadsPerBlock || threads <= 0)
+    {
+        printf("Error: Threads per block (%d) exceeds limit (%d).\n", 
             threads, prop.maxThreadsPerBlock);
-        return;
+        return 0;
     }
 
-    // (Number of Threads) * (4 bytes per float) * (2 arrays: X and Y).
-    // This size is passed to the kernel
-    size_t shared_mem_size = threads * sizeof(float) * 2; 
-    if (shared_mem_size > prop.sharedMemPerBlock) {
+    if (shared_mem_size > prop.sharedMemPerBlock)
+    {
         printf("Error: Shared memory (%.1f KB) exceeds limit (%.1f KB).\n", 
-               shared_mem_size/1024.0, prop.sharedMemPerBlock/1024.0);
-        return;
+            shared_mem_size / 1024.0, prop.sharedMemPerBlock / 1024.0);
+        return 0;
     }
+    return 1;
+}
 
-    int n_points = blocks * threads;
-    int k = 8;
-    size_t f_size = n_points * sizeof(float);
-    size_t i_size = n_points * sizeof(int);
-
-    // Host Allocation
-    float *h_x = (float*)malloc(f_size);
-    float *h_y = (float*)malloc(f_size);
-    int *h_cluster_gpu = (int*)malloc(i_size);
-    int *h_cluster_cpu = (int*)malloc(i_size);
-    float h_cx[MAX_CLUSTERS], h_cy[MAX_CLUSTERS];
-
-    srand(time(NULL));
-    for(int i=0; i<n_points; i++) { 
-        h_x[i] = (float)(rand()%100); h_y[i] = (float)(rand()%100); 
-    }
-    for(int i=0; i<k; i++) { 
-        h_cx[i] = (float)(rand()%100); h_cy[i] = (float)(rand()%100); 
-    }
-
-    // CPU Baseline Timing
-    clock_t cpu_start = clock();
-    kmeans_cpu(h_x, h_y, h_cluster_cpu, h_cx, h_cy, n_points, k);
-    clock_t cpu_stop = clock();
-    double cpu_ms = ((double)(cpu_stop - cpu_start) / CLOCKS_PER_SEC) * 1000.0;
-
-    // GPU Allocation & Error Checking
-    float *d_x = NULL, *d_y = NULL;
-    int *d_cluster = NULL;
-    if (cudaMalloc(&d_x, f_size) != cudaSuccess || 
-        cudaMalloc(&d_y, f_size) != cudaSuccess || 
-        cudaMalloc(&d_cluster, i_size) != cudaSuccess) {
-        printf("Error: GPU Memory Allocation failed (Global Memory).\n");
-        if(d_x) cudaFree(d_x); if(d_y) cudaFree(d_y);
-        free(h_x); free(h_y); free(h_cluster_gpu); free(h_cluster_cpu);
-        return;
-    }
-
-    // Transfer global to constant memory
-    cudaMemcpy(d_x, h_x, f_size, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_y, h_y, f_size, cudaMemcpyHostToDevice);
-    cudaMemcpyToSymbol(c_centroids_x, h_cx, k * sizeof(float));
-    cudaMemcpyToSymbol(c_centroids_y, h_cy, k * sizeof(float));
-
-    // CUDA timing
+/**
+ * Handles GPU allocation, data transfer, kernel launch, and timing.
+ */
+void execute_gpu_workflow(float *h_x, float *h_y, int *h_gpu_res, 
+    int n, int k, int blks, int thr, size_t smem)
+{
+    float *d_x, *d_y;
+    int *d_c;
     cudaEvent_t start, stop;
+    float gpu_ms;
+
+    cudaMalloc(&d_x, n * sizeof(float));
+    cudaMalloc(&d_y, n * sizeof(float));
+    cudaMalloc(&d_c, n * sizeof(int));
+
+    cudaMemcpy(d_x, h_x, n * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_y, h_y, n * sizeof(float), cudaMemcpyHostToDevice);
+
     cudaEventCreate(&start); cudaEventCreate(&stop);
     cudaEventRecord(start);
 
-    // Kernel execution
-    kmeans_gpu_kernel<<<blocks, threads, shared_mem_size>>>(d_x, d_y, 
-        d_cluster, n_points, k);
+    kmeans_gpu_kernel<<<blks, thr, smem>>>(d_x, d_y, d_c, n, k);
 
-    // Check for kernel errors
-    cudaError_t err = cudaGetLastError();
-    if (err != cudaSuccess) {
-        printf("CUDA Kernel Error: %s\n", cudaGetErrorString(err));
-    } else {
-        cudaEventRecord(stop);
-        cudaEventSynchronize(stop);
-        float gpu_ms;
-        cudaEventElapsedTime(&gpu_ms, start, stop);
-        cudaMemcpy(h_cluster_gpu, d_cluster, i_size, cudaMemcpyDeviceToHost);
+    cudaEventRecord(stop);
+    cudaEventSynchronize(stop);
+    cudaEventElapsedTime(&gpu_ms, start, stop);
 
-        // GPU vs CPU result comparison
-        // check to see if the rsults are actually the same
-        int match_count = 0;
-        for (int i = 0; i < n_points; i++) {
-            if (h_cluster_gpu[i] == h_cluster_cpu[i]) {
-                match_count++;
-            }
+    cudaMemcpy(h_gpu_res, d_c, n * sizeof(int), cudaMemcpyDeviceToHost);
+    printf("Device Time: %10.4f ms\n", gpu_ms);
+
+    cudaFree(d_x); cudaFree(d_y); cudaFree(d_c);
+}
+
+/**
+ * Helper to initialize data and centroids.
+ */
+void init_data(float *x, float *y, float *cx, float *cy, int n, int k)
+{
+    for (int i = 0; i < n; i++)
+    {
+        x[i] = (float)(rand() % 100);
+        y[i] = (float)(rand() % 100);
+    }
+    for (int i = 0; i < k; i++)
+    {
+        cx[i] = (float)(rand() % 100);
+        cy[i] = (float)(rand() % 100);
+    }
+}
+
+/**
+ * Helper to compare results and free host memory.
+ */
+void verify_and_free(float *x, float *y, int *gpu, int *cpu, int n)
+{
+    int matches = 0;
+    for (int i = 0; i < n; i++)
+    {
+        if (gpu[i] == cpu[i])
+        {
+            matches++;
         }
+    }
+    printf("Validation:  %d/%d matched.\n", matches, n);
+    free(x);
+    free(y);
+    free(gpu);
+    free(cpu);
+}
 
-        printf("\n--- Results: %d Blocks x %d Threads ---\n", blocks, threads);
-        printf("Hardware:    %s\n", prop.name);
-        printf("Validation:  %d/%d points matched CPU results.\n", 
-            match_count, n_points);
-        printf("Host Time:   %10.4f ms\n", cpu_ms);
-        printf("Device Time: %10.4f ms\n", gpu_ms);
-        printf("Speedup:     %10.2fx\n", cpu_ms / gpu_ms);
+/**
+ * Main benchmark runner
+ */
+void run_benchmark(int blocks, int threads)
+{
+    int n = blocks * threads;
+    int k = 8;
+    size_t smem = threads * sizeof(float) * 2;
+    float h_cx[MAX_CLUSTERS], h_cy[MAX_CLUSTERS];
+
+    if (!validate_hardware(threads, smem))
+    {
+        return;
     }
 
-    // Clean up
-    cudaFree(d_x); cudaFree(d_y); cudaFree(d_cluster);
-    free(h_x); free(h_y); free(h_cluster_gpu); free(h_cluster_cpu);
+    float *h_x = (float*)malloc(n * sizeof(float));
+    float *h_y = (float*)malloc(n * sizeof(float));
+    int *h_c_gpu = (int*)malloc(n * sizeof(int));
+    int *h_c_cpu = (int*)malloc(n * sizeof(int));
+
+    init_data(h_x, h_y, h_cx, h_cy, n, k);
+    cudaMemcpyToSymbol(c_centroids_x, h_cx, k * sizeof(float));
+    cudaMemcpyToSymbol(c_centroids_y, h_cy, k * sizeof(float));
+
+    kmeans_cpu(h_x, h_y, h_c_cpu, h_cx, h_cy, n, k);
+    execute_gpu_workflow(h_x, h_y, h_c_gpu, n, k, blocks, threads, smem);
+
+    verify_and_free(h_x, h_y, h_c_gpu, h_c_cpu, n);
 }
 
 int main(int argc, char** argv) {
