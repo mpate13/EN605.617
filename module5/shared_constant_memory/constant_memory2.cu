@@ -45,10 +45,10 @@ __global__ void const_test_gpu_gmem(u32 * const data, const u32 num_elements)
 		for(int i = 0; i < ITERATION_COUNT; i++) // Use the big number for the loop
 		{
 			// Use the small array indices (0, 1, 2, 3)
-			d ^= const_data_gpu[0]; 
-			d |= const_data_gpu[1];
-			d &= const_data_gpu[2];
-			d |= const_data_gpu[3];
+			d ^= gmem_data_gpu[0]; 
+			d |= gmem_data_gpu[1];
+			d &= gmem_data_gpu[2];
+			d |= gmem_data_gpu[3];
 		}
 		data[tid] = d;
 	}
@@ -277,5 +277,19 @@ ID: 0 Tesla T4:GMEM version is faster by: 0.01ms (G=0.76ms vs. C=0.77ms)
 ID: 0 Tesla T4:GMEM version is faster by: 0.01ms (G=0.76ms vs. C=0.77ms)
 
 Press any key to exit
+-------------------------------------------------------------------
+
+iteration loop 100000:
+const u32 num_elements = (512 * 1024);
+
+ID: 0 Tesla T4:Constant version is faster by: 0.01ms (G=18.60ms vs. C=18.59ms)
+ID: 0 Tesla T4:Constant version is faster by: 0.00ms (G=18.59ms vs. C=18.58ms)
+ID: 0 Tesla T4:Constant version is faster by: 0.00ms (G=18.59ms vs. C=18.59ms)
+ID: 0 Tesla T4:Constant version is faster by: 0.02ms (G=7.47ms vs. C=7.45ms)
+ID: 0 Tesla T4:Constant version is faster by: 0.01ms (G=7.46ms vs. C=7.45ms)
+ID: 0 Tesla T4:Constant version is faster by: 0.00ms (G=7.44ms vs. C=7.44ms)
+
+
+merge_array5 instead of 1: 
 
 */
