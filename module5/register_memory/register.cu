@@ -20,15 +20,39 @@ __host__ void generate_rand_data(unsigned int * host_data_ptr)
         }
 }
 
+// __global__ void test_gpu_register(unsigned int * const data, const unsigned int num_elements)
+// {
+//         const unsigned int tid = (blockIdx.x * blockDim.x) + threadIdx.x;
+//         if(tid < num_elements)
+//         {
+//                 unsigned int d_tmp = data[tid];
+//                 d_tmp = d_tmp * 2;
+//                 data[tid] = d_tmp;
+//         }
+// }
+
 __global__ void test_gpu_register(unsigned int * const data, const unsigned int num_elements)
 {
-        const unsigned int tid = (blockIdx.x * blockDim.x) + threadIdx.x;
-        if(tid < num_elements)
-        {
-                unsigned int d_tmp = data[tid];
-                d_tmp = d_tmp * 2;
-                data[tid] = d_tmp;
-        }
+    const unsigned int tid = (blockIdx.x * blockDim.x) + threadIdx.x;
+    if(tid < num_elements)
+    {
+        unsigned int d0 = data[tid];
+        
+        // Force the GPU to hold many values at once
+        unsigned int d1 = d0 * 2;
+        unsigned int d2 = d1 + d0;
+        unsigned int d3 = d2 * d1;
+        unsigned int d4 = d3 + d2;
+        unsigned int d5 = d4 * d3;
+        unsigned int d6 = d5 + d4;
+        unsigned int d7 = d6 * d5;
+        unsigned int d8 = d7 + d6;
+        unsigned int d9 = d8 * d7;
+        unsigned int d10 = d9 + d8;
+
+        // Final calculation using the chain
+        data[tid] = d10;
+    }
 }
 
 __host__ void gpu_kernel(void)
@@ -49,7 +73,23 @@ __host__ void gpu_kernel(void)
 
         cudaMemcpy(data_gpu, host_packed_array, num_bytes,cudaMemcpyHostToDevice);
 
+        // test_gpu_register <<<num_blocks, num_threads>>>(data_gpu, num_elements);
+        cudaEvent_t start, stop;
+        float milliseconds = 0;
+        cudaEventCreate(&start);
+        cudaEventCreate(&stop);
+
+        cudaEventRecord(start); // Start timer
+
         test_gpu_register <<<num_blocks, num_threads>>>(data_gpu, num_elements);
+
+        cudaEventRecord(stop); // Stop timer
+        cudaEventSynchronize(stop);
+        cudaEventElapsedTime(&milliseconds, start, stop);
+
+        printf("\nRegister Kernel Time: %f ms\n", milliseconds);
+
+
 
         cudaDeviceSynchronize();        // Wait for the GPU launched work to complete
         cudaGetLastError();
