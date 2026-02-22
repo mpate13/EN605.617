@@ -16,7 +16,7 @@ static const int WORK_SIZE = 256;
 typedef unsigned short int u16;
 typedef unsigned int u32;
 
-#define KERNEL_LOOP 4096
+#define KERNEL_LOOP 100000
 
 __constant__ u32 const_data_gpu[KERNEL_LOOP];
 __device__ static u32 gmem_data_gpu[KERNEL_LOOP];
@@ -238,3 +238,20 @@ int main(void) {
     gpu_kernel(); // This triggers the timed G vs. C loops
     return 0;
 }
+
+
+/*
+default: 
+#define KERNEL_LOOP 4096
+const u32 num_elements = (512 * 1024);
+
+ID: 0 Tesla T4:GMEM version is faster by: 0.01ms (G=0.76ms vs. C=0.77ms)
+ID: 0 Tesla T4:GMEM version is faster by: 0.01ms (G=0.76ms vs. C=0.77ms)
+ID: 0 Tesla T4:GMEM version is faster by: 0.01ms (G=0.76ms vs. C=0.77ms)
+ID: 0 Tesla T4:GMEM version is faster by: 0.01ms (G=0.76ms vs. C=0.77ms)
+ID: 0 Tesla T4:GMEM version is faster by: 0.01ms (G=0.76ms vs. C=0.77ms)
+ID: 0 Tesla T4:GMEM version is faster by: 0.01ms (G=0.76ms vs. C=0.77ms)
+
+Press any key to exit
+
+*/
