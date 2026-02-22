@@ -499,35 +499,87 @@ void execute_host_functions()
 
 }
 
+// void execute_gpu_functions()
+// {
+// 	u32 *d = NULL;
+// 	unsigned int idata[NUM_ELEMENTS], odata[NUM_ELEMENTS];
+// 	int i;
+// 	for (i = 0; i < NUM_ELEMENTS; i++){
+// 		idata[i] = (unsigned int) i;
+// 	}
+
+// 	cudaMalloc((void** ) &d, sizeof(int) * NUM_ELEMENTS);
+	
+// 	cudaMemcpy(d, idata, sizeof(unsigned int) * NUM_ELEMENTS, cudaMemcpyHostToDevice);
+
+// 	//Call GPU kernels
+// 	gpu_sort_array_array<<<1, NUM_ELEMENTS>>>(d,MAX_NUM_LISTS,NUM_ELEMENTS);
+
+// 	cudaDeviceSynchronize();	// Wait for the GPU launched work to complete
+// 	cudaGetLastError();
+	
+// 	cudaMemcpy(odata, d, sizeof(int) * NUM_ELEMENTS, cudaMemcpyDeviceToHost);
+
+// 	for (i = 0; i < NUM_ELEMENTS; i++) {
+// 		printf("Input value: %u, device output: %u\n", idata[i], odata[i]);
+// 	}
+	
+// 	cudaFree((void* ) d);
+// 	cudaDeviceReset();
+
+// }
+
 void execute_gpu_functions()
 {
 	u32 *d = NULL;
 	unsigned int idata[NUM_ELEMENTS], odata[NUM_ELEMENTS];
 	int i;
+
+	// 1. Setup Timing Events
+	cudaEvent_t start, stop;
+	float milliseconds = 0;
+	cudaEventCreate(&start);
+	cudaEventCreate(&stop);
+
+	// 2. Initialize data in REVERSE order (to ensure the sort actually has to work)
 	for (i = 0; i < NUM_ELEMENTS; i++){
-		idata[i] = (unsigned int) i;
+		idata[i] = (unsigned int) (NUM_ELEMENTS - i);
 	}
 
 	cudaMalloc((void** ) &d, sizeof(int) * NUM_ELEMENTS);
-	
 	cudaMemcpy(d, idata, sizeof(unsigned int) * NUM_ELEMENTS, cudaMemcpyHostToDevice);
 
-	//Call GPU kernels
-	gpu_sort_array_array<<<1, NUM_ELEMENTS>>>(d,MAX_NUM_LISTS,NUM_ELEMENTS);
+	// 3. Start Timer and Launch Kernel
+	printf("Launching Shared Memory Kernel with NUM_ELEMENTS: %d\n", NUM_ELEMENTS);
+	cudaEventRecord(start);
 
-	cudaDeviceSynchronize();	// Wait for the GPU launched work to complete
-	cudaGetLastError();
+	gpu_sort_array_array<<<1, NUM_ELEMENTS>>>(d, MAX_NUM_LISTS, NUM_ELEMENTS);
+
+	cudaEventRecord(stop);
+
+	// 4. Synchronize and calculate time
+	cudaEventSynchronize(stop);
+	cudaEventElapsedTime(&milliseconds, start, stop);
 	
+	cudaGetLastError();
 	cudaMemcpy(odata, d, sizeof(int) * NUM_ELEMENTS, cudaMemcpyDeviceToHost);
 
-	for (i = 0; i < NUM_ELEMENTS; i++) {
-		printf("Input value: %u, device output: %u\n", idata[i], odata[i]);
+	// 5. Output Timing Result
+	printf("\n----------------------------------------------\n");
+	printf("SHRED MEMORY ANALYSIS:\n");
+	printf("Time taken: %f ms\n", milliseconds);
+	printf("----------------------------------------------\n");
+
+	// Print a few samples to verify it worked
+	for (i = 0; i < 10; i++) {
+		printf("Input: %u -> Output: %u\n", idata[i], odata[i]);
 	}
 	
 	cudaFree((void* ) d);
 	cudaDeviceReset();
-
 }
+
+
 
 /**
  * Host function that prepares data array and passes it to the CUDA kernel.

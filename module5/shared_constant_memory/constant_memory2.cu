@@ -282,14 +282,11 @@ Press any key to exit
 iteration loop 100000:
 const u32 num_elements = (512 * 1024);
 
-ID: 0 Tesla T4:Constant version is faster by: 0.01ms (G=18.60ms vs. C=18.59ms)
-ID: 0 Tesla T4:Constant version is faster by: 0.00ms (G=18.59ms vs. C=18.58ms)
-ID: 0 Tesla T4:Constant version is faster by: 0.00ms (G=18.59ms vs. C=18.59ms)
-ID: 0 Tesla T4:Constant version is faster by: 0.02ms (G=7.47ms vs. C=7.45ms)
-ID: 0 Tesla T4:Constant version is faster by: 0.01ms (G=7.46ms vs. C=7.45ms)
-ID: 0 Tesla T4:Constant version is faster by: 0.00ms (G=7.44ms vs. C=7.44ms)
-
-
-merge_array5 instead of 1: 
+ID: 0 Tesla T4:GMEM version is faster by: 0.20ms (G=18.38ms vs. C=18.59ms)
+ID: 0 Tesla T4:GMEM version is faster by: 0.20ms (G=18.38ms vs. C=18.58ms)
+ID: 0 Tesla T4:GMEM version is faster by: 0.20ms (G=18.39ms vs. C=18.59ms)
+ID: 0 Tesla T4:Constant version is faster by: 10.85ms (G=18.39ms vs. C=7.54ms)
+ID: 0 Tesla T4:GMEM version is faster by: 0.06ms (G=7.37ms vs. C=7.43ms)
+ID: 0 Tesla T4:GMEM version is faster by: 0.06ms (G=7.36ms vs. C=7.43ms)
 
 */
