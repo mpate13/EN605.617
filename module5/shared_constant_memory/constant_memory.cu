@@ -206,10 +206,14 @@ void execute_gpu_functions()
 /**
  * Host function that prepares data array and passes it to the CUDA kernel.
  */
+// int main(void) {
+
+// 	execute_host_functions();
+// 	execute_gpu_functions();
+
+// 	return 0;
+// }
 int main(void) {
-
-	execute_host_functions();
-	execute_gpu_functions();
-
+	gpu_kernel(); // This runs the actual timing comparison loops
 	return 0;
 }
