@@ -136,11 +136,25 @@ void run_benchmark(int blocks, int threads) {
     float gpu_ms;
     cudaEventElapsedTime(&gpu_ms, start, stop);
 
-    printf("\nAssignment Timing Comparison (%d Points)\n", n_points);
-    printf("--------------------------------------------\n");
+    // Calculate total threads
+    int total_threads = blocks * threads;
+
+    printf("\n==============================================\n");
+    printf("TEST CONFIGURATION: %d Blocks | %d Threads/Block\n", blocks, threads);
+    printf("TOTAL PARALLEL THREADS: %d\n", total_threads);
+    printf("MEMORY ENGAGED: Host, Global, Constant, Shared, Registers\n");
+    printf("----------------------------------------------\n");
     printf("Host (CPU) Time:   %10.4f ms\n", cpu_ms);
     printf("Device (GPU) Time: %10.4f ms\n", gpu_ms);
     printf("Speedup Ratio:     %10.2fx\n", cpu_ms / gpu_ms);
+    
+    // Anecdotal check for the user
+    if (gpu_ms < cpu_ms) {
+        printf("RESULT: GPU is outperforming CPU by %0.2fms\n", cpu_ms - gpu_ms);
+    } else {
+        printf("RESULT: CPU is faster due to Kernel Launch Overhead\n");
+    }
+    printf("==============================================\n");
 
     cudaFree(d_x); cudaFree(d_y); cudaFree(d_cluster);
     free(h_x); free(h_y); free(h_cluster_gpu); free(h_cluster_cpu);
