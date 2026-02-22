@@ -131,7 +131,9 @@ default: kernel loop 2048
 Register Kernel Time: 12.710368 ms
 
 
-kernel loop 1m
+kernel loop 1024
+Register Kernel Time: 0.153024 ms
+
 
 
 */
