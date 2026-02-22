@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#define KERNEL_LOOP 1048576
+#define KERNEL_LOOP 1024
 #define KERNEL_SIZE 128
 
 __host__ void wait_exit(void)
