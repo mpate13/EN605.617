@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#define KERNEL_LOOP 2048
+#define KERNEL_LOOP 1048576
 #define KERNEL_SIZE 128
 
 __host__ void wait_exit(void)
@@ -124,3 +124,14 @@ int main(void) {
 
 	return EXIT_SUCCESS;
 }
+
+
+/*
+default: kernel loop 2048
+Register Kernel Time: 12.710368 ms
+
+
+kernel loop 1m
+
+
+*/
