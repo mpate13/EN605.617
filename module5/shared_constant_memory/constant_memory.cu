@@ -57,7 +57,7 @@ __global__ void const_test_gpu_const(unsigned int * const data, const unsigned i
 }
 
 __host__ void gpu_kernel(void) {
-	const unsigned int num_elements = (128 * 1024);
+	const unsigned int num_elements = 1048576; //(128 * 1024);
 	const unsigned int num_threads = 256;
 	const unsigned int num_blocks = (num_elements + (num_threads - 1)) / num_threads;
 	const unsigned int num_bytes = num_elements * sizeof(unsigned int);
@@ -219,7 +219,7 @@ int main(void) {
 }
 
 /*
-Default:
+Default: kl = 65,536 ne = 131,072
 ID: 0 Tesla T4:Constant version is faster by: 0.01ms (Const=0.01ms vs. Literal=0.00ms)
 ID: 0 Tesla T4:Constant version is faster by: 0.01ms (Const=0.01ms vs. Literal=0.00ms)
 ID: 0 Tesla T4:Constant version is faster by: 0.01ms (Const=0.01ms vs. Literal=0.00ms)
@@ -228,8 +228,16 @@ ID: 0 Tesla T4:Constant version is faster by: 0.01ms (Const=0.01ms vs. Literal=0
 ID: 0 Tesla T4:Constant version is faster by: 0.01ms (Const=0.01ms vs. Literal=0.00ms)
 
 
-Num elements: 2,000,000
+kernel loop: 2,000,000, num elements = default 131,072
 
+ID: 0 Tesla T4:Constant version is faster by: 0.01ms (Const=0.01ms vs. Literal=0.00ms)
+ID: 0 Tesla T4:Constant version is faster by: 0.01ms (Const=0.01ms vs. Literal=0.00ms)
+ID: 0 Tesla T4:Constant version is faster by: 0.01ms (Const=0.01ms vs. Literal=0.00ms)
+ID: 0 Tesla T4:Constant version is faster by: 0.02ms (Const=0.02ms vs. Literal=0.00ms)
+ID: 0 Tesla T4:Constant version is faster by: 0.01ms (Const=0.01ms vs. Literal=0.00ms)
+ID: 0 Tesla T4:Constant version is faster by: 0.01ms (Const=0.01ms vs. Literal=0.00ms)
+
+kl = 2m ne = 1,048,576
 
 
 */
