@@ -261,7 +261,8 @@ __global__ void gpu_sort_array_array(u32 * const data,
 	radix_sort2(sort_tmp, num_lists, num_elements, tid, sort_tmp_0, sort_tmp_1);
 
 	//merge_array1(sort_tmp, data, num_lists, num_elements, tid);
-	merge_array5(sort_tmp, data, num_lists, num_elements, tid);
+	//merge_array5(sort_tmp, data, num_lists, num_elements, tid);
+	merge_array6(sort_tmp, data, num_lists, num_elements, tid);
 }
 
 // Uses multiple threads for merge
@@ -613,4 +614,21 @@ Input: 2041 -> Output: 2041
 Input: 2040 -> Output: 2040
 Input: 2039 -> Output: 2039 
 
+merge_array5:
+Launching Shared Memory Kernel with NUM_ELEMENTS: 2048
+
+----------------------------------------------
+SHRED MEMORY ANALYSIS:
+Time taken: 21.336063 ms
+----------------------------------------------
+Input: 2048 -> Output: 2048
+Input: 2047 -> Output: 2047
+Input: 2046 -> Output: 2046
+Input: 2045 -> Output: 2045
+Input: 2044 -> Output: 2044
+Input: 2043 -> Output: 2043
+Input: 2042 -> Output: 2042
+Input: 2041 -> Output: 2041
+Input: 2040 -> Output: 2040
+Input: 2039 -> Output: 2039
 */
