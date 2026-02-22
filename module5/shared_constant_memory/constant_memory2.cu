@@ -16,6 +16,15 @@ static const int WORK_SIZE = 256;
 typedef unsigned short int u16;
 typedef unsigned int u32;
 
+// NEW: Separate these two values
+#define CONST_ARRAY_SIZE 10    // How many numbers we store (keep this small)
+#define ITERATION_COUNT 100000 // How many times we loop (make this big)
+
+// Use the small size for the memory allocation
+__constant__ u32 const_data_gpu[CONST_ARRAY_SIZE];
+__device__ static u32 gmem_data_gpu[CONST_ARRAY_SIZE];
+static u32 const_data_host[CONST_ARRAY_SIZE];
+
 #define KERNEL_LOOP 100000
 
 __constant__ u32 const_data_gpu[KERNEL_LOOP];
@@ -29,14 +38,22 @@ __global__ void const_test_gpu_gmem(u32 * const data, const u32 num_elements)
 	{
 		u32 d = gmem_data_gpu[0];
 
-		for(int i=0;i<KERNEL_LOOP;i++)
-		{
-			d ^= gmem_data_gpu[0];
-			d |= gmem_data_gpu[1];
-			d &= gmem_data_gpu[2];
-			d |= gmem_data_gpu[3];
-		}
+		// for(int i=0;i<KERNEL_LOOP;i++)
+		// {
+		// 	d ^= gmem_data_gpu[0];
+		// 	d |= gmem_data_gpu[1];
+		// 	d &= gmem_data_gpu[2];
+		// 	d |= gmem_data_gpu[3];
+		// }
 
+		for(int i = 0; i < ITERATION_COUNT; i++) // Use the big number for the loop
+		{
+			// Use the small array indices (0, 1, 2, 3)
+			d ^= const_data_gpu[0]; 
+			d |= const_data_gpu[1];
+			d &= const_data_gpu[2];
+			d |= const_data_gpu[3];
+		}
 		data[tid] = d;
 	}
 }
@@ -49,9 +66,18 @@ __global__ void const_test_gpu_const(u32 * const data, const u32 num_elements)
 	{
 		u32 d = const_data_gpu[0];
 
-		for(int i=0;i<KERNEL_LOOP;i++)
+		// for(int i=0;i<KERNEL_LOOP;i++)
+		// {
+		// 	d ^= const_data_gpu[0];
+		// 	d |= const_data_gpu[1];
+		// 	d &= const_data_gpu[2];
+		// 	d |= const_data_gpu[3];
+		// }
+
+		for(int i = 0; i < ITERATION_COUNT; i++) // Use the big number for the loop
 		{
-			d ^= const_data_gpu[0];
+			// Use the small array indices (0, 1, 2, 3)
+			d ^= const_data_gpu[0]; 
 			d |= const_data_gpu[1];
 			d &= const_data_gpu[2];
 			d |= const_data_gpu[3];
@@ -123,7 +149,8 @@ __host__ void gpu_kernel(void)
 		{
 			generate_rand_data(const_data_host);
 
-			cudaMemcpyToSymbol(const_data_gpu, const_data_host, KERNEL_LOOP * sizeof(u32));
+			//cudaMemcpyToSymbol(const_data_gpu, const_data_host, KERNEL_LOOP * sizeof(u32));
+			cudaMemcpyToSymbol(const_data_gpu, const_data_host, CONST_ARRAY_SIZE * sizeof(u32));
 
 			const_test_gpu_gmem <<<num_blocks, num_threads>>>(data_gpu, num_elements);
 			cuda_error_check("Error ", " returned from literal runtime  kernel!");
@@ -138,7 +165,8 @@ __host__ void gpu_kernel(void)
 			cudaEventSynchronize(kernel_stop1);
 			cudaEventElapsedTime(&delta_time1, kernel_start1, kernel_stop1);
 
-			cudaMemcpyToSymbol(gmem_data_gpu, const_data_host, KERNEL_LOOP * sizeof(u32));
+			//cudaMemcpyToSymbol(gmem_data_gpu, const_data_host, KERNEL_LOOP * sizeof(u32));
+			cudaMemcpyToSymbol(const_data_gpu, const_data_host, CONST_ARRAY_SIZE * sizeof(u32));
 			const_test_gpu_const<<< num_blocks, num_threads >>>(data_gpu, num_elements);
 
 			cuda_error_check("Error ", " returned from literal startup  kernel!");
