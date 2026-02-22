@@ -4,10 +4,37 @@
 #include <float.h>
 #include <time.h>
 
+/**
+ * K-Means Clustering: Accelerated Assignment Phase
+ * ------------------------------------------------------------------
+ * This program implements the most computationally intensive portion of the 
+ * K-Means algorithm: the "Assignment Phase" (also known as Expectation).
+ * * HOW IT RELATES TO K-MEANS:
+ * K-Means is an iterative 2-step process:
+ * 1. Assignment (THIS CODE): Every data point finds its nearest centroid.
+ * 2. Update (Next Step): Centroids move to the average of their assigned 
+ * points. This GPU kernel handles Step 1. In a full clustering application, 
+ * this code would run inside a loop, repeating until the centroids "converge" 
+ * (stop moving).
+ * By accelerating this phase, we optimize the part of the algorithm that 
+ * scales linearly with the number of data points, 
+ * which is where CPU bottlenecks occur.
+ *
+ * GPU ARCHITECTURE OPTIMIZATIONS:
+ * - Constant Memory: Centroids are cached for fast "broadcast" reads.
+ * - Shared Memory: Points are staged in a block-level "scratchpad" to hide
+ *  VRAM latency.
+ * - Register Math: Individual thread calculations happen at peak 
+ * hardware speed.
+ * - Validation: Results are verified against a serial CPU baseline 
+ * for accuracy.
+ */
+
+
 #define MAX_CLUSTERS 16
 
 /**
- * 1. CONSTANT MEMORY: 
+ * CONSTANT MEMORY: 
  * Stores cluster centroids. This is cached and optimized for 
  * "broadcast" reads where every thread reads the same value.
  */
@@ -15,49 +42,50 @@ __constant__ float c_centroids_x[MAX_CLUSTERS];
 __constant__ float c_centroids_y[MAX_CLUSTERS];
 
 /**
- * GPU KERNEL: The Memory Waterfall
- * Path: Global -> Shared -> Registers -> Global (with Constant lookups)
+ * The memory path, as discussed in lecture
+ * Path: Global -> Shared -> Registers -> Global (with constant lookups)
  */
 __global__ void kmeans_gpu_kernel(float *d_x, float *d_y, int *d_cluster, 
                                    int n_points, int k) {
     
-    // Built-in CUDA variables for 1D thread mapping
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
     int local_id = threadIdx.x;
 
-    // Safety Guard: Ensure threads don't access memory outside of n_points
+    // Check threads don't access memory outside of n_points
     if (tid >= n_points) return;
 
     /**
-     * 2. SHARED MEMORY:
-     * High-speed staging area shared by threads within the same block.
+     * SHARED MEMORY:
+     * Shared by threads within the same block.
      * Partitioned into two arrays for X and Y coordinates.
      */
     extern __shared__ float s_data[]; 
     float *s_x = &s_data[0];
     float *s_y = &s_data[blockDim.x];
 
-    // STEP 1: Coalesced load from Global Memory to Shared Memory
+    // Load from Global Memory to Shared Memory
     s_x[local_id] = d_x[tid];
     s_y[local_id] = d_y[tid];
 
-    // Synchronize to ensure all threads have finished loading before math begins
+    // Synchronize to ensure all threads have finished loading 
+    // before math begins
     __syncthreads(); 
 
     /**
-     * 3. REGISTERS:
-     * Thread-private variables used for the heavy Euclidean math.
+     * REGISTERS:
+     * Thread-private variables used for the fast math
      */
     float px = s_x[local_id];
     float py = s_y[local_id];
     float min_dist = FLT_MAX;
     int best_cluster = -1;
 
-    // STEP 2: Calculate distances using Registers and Constant Memory Centroids
+    // Calculate distances using Registers and 
+    // Constant Memory Centroids (lookups)
     for (int i = 0; i < k; i++) {
         float dx = px - c_centroids_x[i];
         float dy = py - c_centroids_y[i];
-        float dist = (dx * dx) + (dy * dy); // Squared Euclidean distance
+        float dist = (dx * dx) + (dy * dy); // squared euclidean distance
 
         if (dist < min_dist) {
             min_dist = dist;
@@ -65,12 +93,13 @@ __global__ void kmeans_gpu_kernel(float *d_x, float *d_y, int *d_cluster,
         }
     }
 
-    // STEP 3: Write final assignment back to Global Memory
+    // Write final assignment back to Global Memory
     d_cluster[tid] = best_cluster;
 }
 
-// Host-side CPU implementation for validation and speedup comparison
-void kmeans_cpu(float *x, float *y, int *cluster, float *cx, float *cy, int n, int k) {
+// Host CPU implementation for validation and speedup comparison
+void kmeans_cpu(float *x, float *y, int *cluster, float *cx, 
+    float *cy, int n, int k) {
     for (int i = 0; i < n; i++) {
         float min_dist = FLT_MAX;
         int best_cluster = -1;
@@ -88,16 +117,20 @@ void kmeans_cpu(float *x, float *y, int *cluster, float *cx, float *cy, int n, i
 }
 
 void run_benchmark(int blocks, int threads) {
-    // Safety Guard: Querying actual hardware properties
+    // Querying actual hardware for some of safety checks... 
+    // (ensure there are not more threads than the limit, etc)
     cudaDeviceProp prop;
     cudaGetDeviceProperties(&prop, 0);
 
-    // Hardware Limit Checks
+    // Hardware limit checks (safety)
     if (threads > prop.maxThreadsPerBlock || threads <= 0) {
-        printf("Error: Threads per block (%d) exceeds GPU limit (%d).\n", threads, prop.maxThreadsPerBlock);
+        printf("Error: Threads per block (%d) exceeds GPU limit (%d).\n", 
+            threads, prop.maxThreadsPerBlock);
         return;
     }
 
+    // (Number of Threads) * (4 bytes per float) * (2 arrays: X and Y).
+    // This size is passed to the kernel
     size_t shared_mem_size = threads * sizeof(float) * 2; 
     if (shared_mem_size > prop.sharedMemPerBlock) {
         printf("Error: Shared memory (%.1f KB) exceeds limit (%.1f KB).\n", 
@@ -118,8 +151,12 @@ void run_benchmark(int blocks, int threads) {
     float h_cx[MAX_CLUSTERS], h_cy[MAX_CLUSTERS];
 
     srand(time(NULL));
-    for(int i=0; i<n_points; i++) { h_x[i] = (float)(rand()%100); h_y[i] = (float)(rand()%100); }
-    for(int i=0; i<k; i++) { h_cx[i] = (float)(rand()%100); h_cy[i] = (float)(rand()%100); }
+    for(int i=0; i<n_points; i++) { 
+        h_x[i] = (float)(rand()%100); h_y[i] = (float)(rand()%100); 
+    }
+    for(int i=0; i<k; i++) { 
+        h_cx[i] = (float)(rand()%100); h_cy[i] = (float)(rand()%100); 
+    }
 
     // CPU Baseline Timing
     clock_t cpu_start = clock();
@@ -139,21 +176,22 @@ void run_benchmark(int blocks, int threads) {
         return;
     }
 
-    // Transfers to Global and Constant Memory
+    // Transfer global to constant memory
     cudaMemcpy(d_x, h_x, f_size, cudaMemcpyHostToDevice);
     cudaMemcpy(d_y, h_y, f_size, cudaMemcpyHostToDevice);
     cudaMemcpyToSymbol(c_centroids_x, h_cx, k * sizeof(float));
     cudaMemcpyToSymbol(c_centroids_y, h_cy, k * sizeof(float));
 
-    // CUDA Timing Events
+    // CUDA timing
     cudaEvent_t start, stop;
     cudaEventCreate(&start); cudaEventCreate(&stop);
     cudaEventRecord(start);
 
-    // Kernel Execution
-    kmeans_gpu_kernel<<<blocks, threads, shared_mem_size>>>(d_x, d_y, d_cluster, n_points, k);
+    // Kernel execution
+    kmeans_gpu_kernel<<<blocks, threads, shared_mem_size>>>(d_x, d_y, 
+        d_cluster, n_points, k);
 
-    // Kernel Launch Error Check
+    // Check for kernel errors
     cudaError_t err = cudaGetLastError();
     if (err != cudaSuccess) {
         printf("CUDA Kernel Error: %s\n", cudaGetErrorString(err));
@@ -164,15 +202,19 @@ void run_benchmark(int blocks, int threads) {
         cudaEventElapsedTime(&gpu_ms, start, stop);
         cudaMemcpy(h_cluster_gpu, d_cluster, i_size, cudaMemcpyDeviceToHost);
 
-        // Logic Validation: GPU vs CPU result comparison
+        // GPU vs CPU result comparison
+        // check to see if the rsults are actually the same
         int match_count = 0;
         for (int i = 0; i < n_points; i++) {
-            if (h_cluster_gpu[i] == h_cluster_cpu[i]) match_count++;
+            if (h_cluster_gpu[i] == h_cluster_cpu[i]) {
+                match_count++;
+            }
         }
 
         printf("\n--- Results: %d Blocks x %d Threads ---\n", blocks, threads);
         printf("Hardware:    %s\n", prop.name);
-        printf("Validation:  %d/%d points matched CPU results.\n", match_count, n_points);
+        printf("Validation:  %d/%d points matched CPU results.\n", 
+            match_count, n_points);
         printf("Host Time:   %10.4f ms\n", cpu_ms);
         printf("Device Time: %10.4f ms\n", gpu_ms);
         printf("Speedup:     %10.2fx\n", cpu_ms / gpu_ms);
