@@ -9,30 +9,31 @@
  * ------------------------------------------------------------------
  * This program implements the "Assignment Phase" of the K-Means algorithm.
  * K-Means is an iterative 2-step process:
- * 1. Assignment (THIS CODE): Every data point finds its nearest centroid.
- * 2. Update (Next Step): Centroids move to the average of their assigned 
+ * 1. Assignment (THIS CODE): Every data point finds its nearest centroid via
+ * Euclidean distance.
+ * 2. Update (Next Step): Centroids are recalculated as the mean of assigned
  * points. This GPU kernel handles Step 1.
  * 
- * MEMORY USED
- * 1. CONSTANT: Centroids are cached for fast hardware "broadcast" reads.
- * 2. GLOBAL: Large point datasets are stored in VRAM.
- * 3. SHARED: Points are staged in block-level L1-speed memory.
- * 4. REGISTERS: Mathematical calculations happen at peak frequency.
+ * MEMORY USED:
+ * 1. CONSTANT MEMORY: Centroids are cached here. This is optimized for 
+ * "broadcast" reads where every thread in a warp accesses the same data.
+ * 2. GLOBAL MEMORY: The bulk point dataset and final assignments are stored
+ * in VRAM for high-capacity throughput.
+ * 3. SHARED MEMORY: Points are staged from Global to this block-level 
+ * L1-speed scratchpad to minimize high-latency Global Memory trips.
+ * 4. REGISTERS: All mathematical calculations (distance, local IDs, loops)
+ * are performed at peak frequency within the CUDA core.
  */
 
 #define MAX_CLUSTERS 16
 
-/**
- * CONSTANT MEMORY - Stores cluster centroids.
- * This is cached and optimized for "broadcast" reads where 
- * every thread reads the same value simultaneously.
- */
+// CONSTANT MEMORY
 __constant__ float c_centroids_x[MAX_CLUSTERS];
 __constant__ float c_centroids_y[MAX_CLUSTERS];
 
 /**
  * Logic for calculating the closest centroid for a single point.
- * Uses REGISTERS for math and CONSTANT for centroid lookups.
+ * Uses REGISTERS for local math and CONSTANT MEMORY for centroid lookups.
  */
 __device__ int find_nearest_cluster(float px, float py, int k)
 {
@@ -43,7 +44,7 @@ __device__ int find_nearest_cluster(float px, float py, int k)
     {
         float dx = px - c_centroids_x[i];
         float dy = py - c_centroids_y[i];
-        float dist = (dx * dx) + (dy * dy); // Squared Euclidean distance
+        float dist = (dx * dx) + (dy * dy);
 
         if (dist < min_dist)
         {
@@ -55,7 +56,8 @@ __device__ int find_nearest_cluster(float px, float py, int k)
 }
 
 /**
- * Handles thread mapping and memory staging from GLOBAL to SHARED.
+ * Handles thread mapping and memory 
+ * staging from GLOBAL MEMORY to SHARED MEMORY.
  */
 __global__ void kmeans_gpu_kernel(float *d_x, float *d_y, int *d_cluster, 
                                    int n_points, int k)
@@ -63,28 +65,23 @@ __global__ void kmeans_gpu_kernel(float *d_x, float *d_y, int *d_cluster,
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
     int local_id = threadIdx.x;
 
-    if (tid >= n_points) 
-    {
-        return;
-    }
+    if (tid >= n_points) return;
 
-    /**
-     * SHARED MEMORY
-     */
+    // SHARED MEMORY
     extern __shared__ float s_data[];
     float *s_x = &s_data[0];
     float *s_y = &s_data[blockDim.x];
 
-    // Global Memory -> Shared Memory
+    // Global -> Shared
     s_x[local_id] = d_x[tid];
     s_y[local_id] = d_y[tid];
 
-    __syncthreads(); // Ensure all threads finish loading before math
+    __syncthreads();
 
-    // Shared -> Register (passed as arguments)
+    // Shared -> Register
     int assignment = find_nearest_cluster(s_x[local_id], s_y[local_id], k);
 
-    // Register -> Global Memory
+    // Register -> Global
     d_cluster[tid] = assignment;
 }
 
@@ -114,7 +111,7 @@ void kmeans_cpu(float *x, float *y, int *cluster, float *cx,
 }
 
 /**
- * Validates hardware limits and dataset size
+ * Validates hardware limits and dataset size.
  */
 int validate_hardware(int threads, size_t shared_mem_size, int n)
 {
@@ -134,22 +131,35 @@ int validate_hardware(int threads, size_t shared_mem_size, int n)
     }
     if (req_mem > prop.totalGlobalMem * 0.9)
     {
-        printf("Error: Dataset too large for GPU VRAM.\n");
+        printf("Error: Dataset too large for GPU GLOBAL MEMORY.\n");
         return 0;
     }
     return 1;
 }
 
 /**
- * Handles Global Memory allocation and kernel timing.
+ * Checks for kernel launch and execution errors.
+ */
+void check_cuda_errors(const char *msg)
+{
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess)
+    {
+        printf("CUDA Error (%s): %s\n", msg, cudaGetErrorString(err));
+        exit(EXIT_FAILURE);
+    }
+    cudaDeviceSynchronize();
+}
+
+/**
+ * Manages GLOBAL MEMORY allocation and kernel timing.
  */
 float execute_gpu_workflow(float *h_x, float *h_y, int *h_gpu_res, 
     int n, int k, int blks, int thr, size_t smem)
 {
-    float *d_x, *d_y;
+    float *d_x, *d_y, gpu_ms;
     int *d_c;
     cudaEvent_t start, stop;
-    float gpu_ms;
 
     cudaMalloc(&d_x, n * sizeof(float));
     cudaMalloc(&d_y, n * sizeof(float));
@@ -160,15 +170,45 @@ float execute_gpu_workflow(float *h_x, float *h_y, int *h_gpu_res,
 
     cudaEventCreate(&start); cudaEventCreate(&stop);
     cudaEventRecord(start);
+    
     kmeans_gpu_kernel<<<blks, thr, smem>>>(d_x, d_y, d_c, n, k);
-    cudaEventRecord(stop);
+    check_cuda_errors("Kernel Launch");
 
+    cudaEventRecord(stop);
     cudaEventSynchronize(stop);
     cudaEventElapsedTime(&gpu_ms, start, stop);
+    
     cudaMemcpy(h_gpu_res, d_c, n * sizeof(int), cudaMemcpyDeviceToHost);
-
     cudaFree(d_x); cudaFree(d_y); cudaFree(d_c);
     return gpu_ms;
+}
+
+/**
+ * Initializes data points and centroids on the HOST MEMORY.
+ */
+void init_host_data(float *x, float *y, float *cx, float *cy, int n, int k)
+{
+    for (int i = 0; i < n; i++) 
+    { 
+        x[i] = (float)(rand() % 100); 
+        y[i] = (float)(rand() % 100); 
+    }
+    for (int i = 0; i < k; i++) 
+    { 
+        cx[i] = (float)(rand() % 100); 
+        cy[i] = (float)(rand() % 100); 
+    }
+}
+
+/**
+ * Executes the CPU baseline and returns timing in ms.
+ */
+double run_cpu_baseline(float *x, float *y, int *res, float *cx, 
+    float *cy, int n, int k)
+{
+    clock_t start_time = clock();
+    kmeans_cpu(x, y, res, cx, cy, n, k);
+    return (double)(clock() - start_time) / CLOCKS_PER_SEC * 1000.0;
 }
 
 /**
@@ -190,13 +230,12 @@ void print_report(int blks, int thr, int n, int match, double cpu, float gpu)
 }
 
 /**
- * Main benchmark runner
+ * Primary benchmark orchestrator.
  */
 void run_benchmark(int blocks, int threads)
 {
-    int n = blocks * threads;
-    int k = 8;
-    size_t smem = threads * sizeof(float) * 2;
+    int n = blocks * threads, k = 8;
+    size_t smem = (size_t)threads * sizeof(float) * 2;
     float h_cx[MAX_CLUSTERS], h_cy[MAX_CLUSTERS];
 
     if (!validate_hardware(threads, smem, n)) return;
@@ -206,28 +245,22 @@ void run_benchmark(int blocks, int threads)
     int *h_c_gpu = (int*)malloc(n * sizeof(int));
     int *h_c_cpu = (int*)malloc(n * sizeof(int));
 
-    if (!h_x || !h_y || !h_c_gpu || !h_c_cpu)
+    if (!h_x || !h_y || !h_c_gpu || !h_c_cpu) return;
+
+    init_host_data(h_x, h_y, h_cx, h_cy, n, k);
+    
+    if (cudaMemcpyToSymbol(c_centroids_x, h_cx, k * sizeof(float)) != 
+        cudaSuccess ||
+        cudaMemcpyToSymbol(c_centroids_y, h_cy, k * sizeof(float)) != 
+        cudaSuccess)
     {
-        printf("Error: Host Memory Allocation failed.\n");
+        printf("Error: CONSTANT MEMORY Copy Failed.\n");
         return;
     }
 
-    for (int i = 0; i < n; i++) { 
-        h_x[i] = rand() % 100; h_y[i] = rand() % 100; 
-    }
-    for (int i = 0; i < k; i++) { 
-        h_cx[i] = rand() % 100; h_cy[i] = rand() % 100; 
-    }
-    
-    cudaMemcpyToSymbol(c_centroids_x, h_cx, k * sizeof(float));
-    cudaMemcpyToSymbol(c_centroids_y, h_cy, k * sizeof(float));
-
-    clock_t start_time = clock();
-    kmeans_cpu(h_x, h_y, h_c_cpu, h_cx, h_cy, n, k);
-    double cpu_ms = (double)(clock() - start_time) / CLOCKS_PER_SEC * 1000.0;
-
-    float gpu_ms = execute_gpu_workflow(h_x, h_y, h_c_gpu, n, k, 
-                                        blocks, threads, smem);
+    double cpu_ms = run_cpu_baseline(h_x, h_y, h_c_cpu, h_cx, h_cy, n, k);
+    float gpu_ms = execute_gpu_workflow(h_x, h_y, h_c_gpu, 
+        n, k, blocks, threads, smem);
 
     int correct = 0;
     for (int i = 0; i < n; i++) if (h_c_gpu[i] == h_c_cpu[i]) correct++;
