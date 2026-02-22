@@ -21,7 +21,7 @@ typedef unsigned int u32;
 #define ITERATION_COUNT 100000 // How many times we loop (make this big)
 
 
-#define KERNEL_LOOP 100000
+#define KERNEL_LOOP 4096
 
 __constant__ u32 const_data_gpu[KERNEL_LOOP];
 __device__ static u32 gmem_data_gpu[KERNEL_LOOP];
