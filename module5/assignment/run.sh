@@ -45,7 +45,7 @@ echo -e "\n[TEST 3] Single Block: 1024 total threads, Block Size 1024"
 echo -e "\n[TEST 4] 1M Threads | Block Size 1024 (Efficient: 977 Blocks)"
 ./assignment 1000000 1024
 
-echo -e "\n[TEST 5] 1M Threads | Block Size 128 (8,192 Blocks)"
+echo -e "\n[TEST 5] 1M Threads | Block Size 128 (7,813 Blocks)"
 ./assignment 1000000 128
 
 echo -e "\n[TEST 6] 1M Threads | Block Size 1 (1,000,000 Blocks)"
