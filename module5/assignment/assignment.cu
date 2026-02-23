@@ -209,44 +209,75 @@ void print_report(int blks, int thr, int n, int match, double cpu, float gpu) {
 }
 
 /**
- * Primary benchmark orchestrator.
+ * Core execution logic: Initializing data, performing the 
+ * K-Means runs (CPU vs GPU), and validating results.
  */
-//void run_benchmark(int blocks, int threads)
-void run_benchmark(int blocks, int threads, int totalPoints) {
-    int n = totalPoints;
-    int k = 8;
-    size_t smem = (size_t)threads * sizeof(float) * 2;
-    //size_t smem = (size_t)threads * sizeof(float) * 2;
+void execute_test_logic(int n, int k, int blocks, int threads, 
+                        size_t smem, float *h_x, float *h_y, 
+                        int *h_c_gpu, int *h_c_cpu)
+{
     float h_cx[MAX_CLUSTERS], h_cy[MAX_CLUSTERS];
 
-    if (!validate_hardware(threads, smem, n)) return;
-
-    float *h_x = (float*)malloc(n * sizeof(float));
-    float *h_y = (float*)malloc(n * sizeof(float));
-    int *h_c_gpu = (int*)malloc(n * sizeof(int));
-    int *h_c_cpu = (int*)malloc(n * sizeof(int));
-
-    if (!h_x || !h_y || !h_c_gpu || !h_c_cpu) return;
-
+    // 1. Initialize data and setup Constant Memory
     init_host_data(h_x, h_y, h_cx, h_cy, n, k);
     
     if (cudaMemcpyToSymbol(c_centroids_x, h_cx, k * sizeof(float)) != 
         cudaSuccess ||
         cudaMemcpyToSymbol(c_centroids_y, h_cy, k * sizeof(float)) != 
-        cudaSuccess){
+        cudaSuccess)
+    {
         printf("Error: CONSTANT MEMORY Copy Failed.\n");
         return;
     }
 
+    // 2. Perform Benchmarking
     double cpu_ms = run_cpu_baseline(h_x, h_y, h_c_cpu, h_cx, h_cy, n, k);
     float gpu_ms = execute_gpu_workflow(h_x, h_y, h_c_gpu, 
-        n, k, blocks, threads, smem);
+                                        n, k, blocks, threads, smem);
 
+    // 3. Validate results and print report
     int correct = 0;
-    for (int i = 0; i < n; i++) if (h_c_gpu[i] == h_c_cpu[i]) correct++;
+    for (int i = 0; i < n; i++) 
+    {
+        if (h_c_gpu[i] == h_c_cpu[i]) correct++;
+    }
 
     print_report(blocks, threads, n, correct, cpu_ms, gpu_ms);
-    free(h_x); free(h_y); free(h_c_gpu); free(h_c_cpu);
+}
+
+/**
+ * Validates hardware, manages Host Memory lifecycle, 
+ * and calls the test logic.
+ */
+void run_benchmark(int blocks, int threads, int totalPoints)
+{
+    int n = totalPoints;
+    int k = 8;
+    size_t smem = (size_t)threads * sizeof(float) * 2;
+
+    // Hardware Limit Check
+    if (!validate_hardware(threads, smem, n)) return;
+
+    // HOST MEMORY Allocation
+    float *h_x = (float*)malloc(n * sizeof(float));
+    float *h_y = (float*)malloc(n * sizeof(float));
+    int *h_c_gpu = (int*)malloc(n * sizeof(int));
+    int *h_c_cpu = (int*)malloc(n * sizeof(int));
+
+    if (!h_x || !h_y || !h_c_gpu || !h_c_cpu) 
+    {
+        printf("Error: Host Memory Allocation Failed.\n");
+        return;
+    }
+
+    // Call the execution logic
+    execute_test_logic(n, k, blocks, threads, smem, h_x, h_y, h_c_gpu, h_c_cpu);
+
+    // Clean up HOST MEMORY
+    free(h_x); 
+    free(h_y); 
+    free(h_c_gpu); 
+    free(h_c_cpu);
 }
 
 int main(int argc, char** argv) {
