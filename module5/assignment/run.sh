@@ -25,7 +25,6 @@
 set -e
 
 # 1. Clean and Build
-echo "Rebuilding project..."
 make clean
 make
 
@@ -51,5 +50,3 @@ echo -e "\n[TEST 5] 1M Threads | Block Size 128 (8,192 Blocks)"
 
 echo -e "\n[TEST 6] 1M Threads | Block Size 1 (1,000,000 Blocks)"
 ./assignment 1000000 1
-
-./assignment 1000000 1000000
