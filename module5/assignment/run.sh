@@ -32,22 +32,25 @@ make
 echo "Starting Benchmarks..."
 echo "Format: ./assignment <Total_Threads> <Block_Size>"
 
-# TEST 1: Baseline (Requirement: Minimum 64 threads)
-echo -e "\n[TEST 1] Baseline: 64 total threads, Block Size 64 (1 Block)"
+# --- CATEGORY 1: Scaling Threads within a SINGLE BLOCK ---
+# This proves the code works at different occupancy levels on 1 SM.
+echo -e "\n[TEST 1] 1 Block | 64 Threads (Baseline)"
 ./assignment 64 64
 
-# TEST 2 & 3: Varying Block Size (Requirement: 2 additional block sizes)
-echo -e "\n[TEST 2] Medium Block Size: 1024 total threads, Block Size 256 (4 Blocks)"
-./assignment 1024 256
+echo -e "\n[TEST 2] 1 Block | 256 Threads"
+./assignment 256 256
 
-echo -e "\n[TEST 3] Small Block Size: 1024 total threads, Block Size 32 (32 Blocks)"
-./assignment 1024 32
+echo -e "\n[TEST 3] 1 Block | 1024 Threads (Max Block Size)"
+./assignment 1024 1024
 
-# TEST 4 & 5: Varying Total Threads (Requirement: 2 additional thread counts)
-echo -e "\n[TEST 4] Large Workload: 10,000 total threads, Block Size 512 (~20 Blocks)"
-./assignment 10000 512
+# --- CATEGORY 2: Constant Work, Variable Block Size ---
+# This proves the code handles different Grid/Block layouts for the same total work.
+# Total threads is kept constant at 4096.
+echo -e "\n[TEST 4] 4096 Total Threads | Block Size 64  (64 Blocks)"
+./assignment 4096 64
 
-echo -e "\n[TEST 5] Stress Test: 1,000,000 total threads, Block Size 1024 (~977 Blocks)"
-./assignment 1000000 1024
+echo -e "\n[TEST 5] 4096 Total Threads | Block Size 256 (16 Blocks)"
+./assignment 4096 256
 
-echo -e "\nBenchmarks Complete. Please screen capture this output for the bonus."
+echo -e "\n[TEST 6] 4096 Total Threads | Block Size 1024 (4 Blocks)"
+./assignment 4096 1024

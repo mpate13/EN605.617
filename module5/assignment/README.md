@@ -21,7 +21,7 @@ This will run tests for:
 ### To run an individual test:
 ```bash
     make
-    ./assignment <blocks> <threads> 
+    ./assignment <total_threads> <block_size> 
 ```
 
 ## Where are things
