@@ -32,22 +32,22 @@ make
 echo "Starting Benchmarks..."
 echo "Format: ./assignment <Total_Threads> <Block_Size>"
 
-# --- CATEGORY 1: Small Scale (GPU Overhead dominates) ---
-echo -e "\n[TEST 1] Small Scale: 1,024 Threads | Block Size 256"
-./assignment 1024 256
+# --- PHASE 1: Single Block Scaling ---
+echo -e "\n[TEST 1] Single Block: 64 total threads, Block Size 64"
+./assignment 64 64
 
-# --- CATEGORY 2: Medium Scale (GPU begins to pull away) ---
-echo -e "\n[TEST 2] Medium Scale: 102,400 Threads | Block Size 256"
-./assignment 102400 256
+echo -e "\n[TEST 2] Single Block: 128 total threads, Block Size 128"
+./assignment 128 128
 
-# --- CATEGORY 3: Large Scale (GPU Power Showcase) ---
-echo -e "\n[TEST 3] Large Scale: 1,048,576 Threads | Block Size 256"
-./assignment 1048576 256
+echo -e "\n[TEST 3] Single Block: 1024 total threads, Block Size 1024"
+./assignment 1024 1024
 
-# --- CATEGORY 4: Varying Block Size at Large Scale ---
-# Keeping work the same (1M points) but changing hardware layout
-echo -e "\n[TEST 4] 1M Threads | Block Size 64 (High Block Count)"
-./assignment 1048576 64
+# --- PHASE 2: Constant Work (1M Threads), Variable Block Size ---
+echo -e "\n[TEST 4] 1M Threads | Block Size 1024 (Efficient: 977 Blocks)"
+./assignment 1000000 1024
 
-echo -e "\n[TEST 5] 1M Threads | Block Size 1024 (Low Block Count)"
-./assignment 1048576 1024
+echo -e "\n[TEST 5] 1M Threads | Block Size 128 (8,192 Blocks)"
+./assignment 1000000 128
+
+echo -e "\n[TEST 6] 1M Threads | Block Size 1 (1,000,000 Blocks)"
+./assignment 1000000 1
