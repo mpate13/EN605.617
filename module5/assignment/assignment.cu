@@ -36,19 +36,16 @@ __constant__ float c_centroids_y[MAX_CLUSTERS];
  * Logic for calculating the closest centroid for a single point.
  * Uses REGISTERS for local math and CONSTANT MEMORY for centroid lookups.
  */
-__device__ int find_nearest_cluster(float px, float py, int k)
-{
+__device__ int find_nearest_cluster(float px, float py, int k) {
     float min_dist = FLT_MAX;
     int best_cluster = -1;
 
-    for (int i = 0; i < k; i++)
-    {
+    for (int i = 0; i < k; i++) {
         float dx = px - c_centroids_x[i];
         float dy = py - c_centroids_y[i];
         float dist = (dx * dx) + (dy * dy);
 
-        if (dist < min_dist)
-        {
+        if (dist < min_dist) {
             min_dist = dist;
             best_cluster = i;
         }
@@ -61,8 +58,7 @@ __device__ int find_nearest_cluster(float px, float py, int k)
  * staging from GLOBAL MEMORY to SHARED MEMORY.
  */
 __global__ void kmeans_gpu_kernel(float *d_x, float *d_y, int *d_cluster, 
-                                   int n_points, int k)
-{
+                                   int n_points, int k) {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
     int local_id = threadIdx.x;
 
@@ -90,19 +86,15 @@ __global__ void kmeans_gpu_kernel(float *d_x, float *d_y, int *d_cluster,
  * Serial baseline used for speedup comparison and result validation.
  */
 void kmeans_cpu(float *x, float *y, int *cluster, float *cx, 
-    float *cy, int n, int k) 
-{
-    for (int i = 0; i < n; i++) 
-    {
+    float *cy, int n, int k) {
+    for (int i = 0; i < n; i++) {
         float min_dist = FLT_MAX;
         int best_cluster = -1;
-        for (int j = 0; j < k; j++) 
-        {
+        for (int j = 0; j < k; j++) {
             float dx = x[i] - cx[j];
             float dy = y[i] - cy[j];
             float dist = (dx * dx) + (dy * dy);
-            if (dist < min_dist) 
-            {
+            if (dist < min_dist) {
                 min_dist = dist;
                 best_cluster = j;
             }
@@ -114,24 +106,20 @@ void kmeans_cpu(float *x, float *y, int *cluster, float *cx,
 /**
  * Validates hardware limits and dataset size.
  */
-int validate_hardware(int threads, size_t shared_mem_size, int n)
-{
+int validate_hardware(int threads, size_t shared_mem_size, int n) {
     cudaDeviceProp prop;
     cudaGetDeviceProperties(&prop, 0);
     size_t req_mem = (size_t)n * (2 * sizeof(float) + sizeof(int));
 
-    if (threads > prop.maxThreadsPerBlock || threads <= 0)
-    {
+    if (threads > prop.maxThreadsPerBlock || threads <= 0) {
         printf("Error: Threads/Block (%d) exceeds limit.\n", threads);
         return 0;
     }
-    if (shared_mem_size > prop.sharedMemPerBlock)
-    {
+    if (shared_mem_size > prop.sharedMemPerBlock) {
         printf("Error: Shared memory exceeds limit.\n");
         return 0;
     }
-    if (req_mem > prop.totalGlobalMem * 0.9)
-    {
+    if (req_mem > prop.totalGlobalMem * 0.9) {
         printf("Error: Dataset too large for GPU GLOBAL MEMORY.\n");
         return 0;
     }
@@ -141,11 +129,9 @@ int validate_hardware(int threads, size_t shared_mem_size, int n)
 /**
  * Checks for kernel launch and execution errors.
  */
-void check_cuda_errors(const char *msg)
-{
+void check_cuda_errors(const char *msg) {
     cudaError_t err = cudaGetLastError();
-    if (err != cudaSuccess)
-    {
+    if (err != cudaSuccess) {
         printf("CUDA Error (%s): %s\n", msg, cudaGetErrorString(err));
         exit(EXIT_FAILURE);
     }
@@ -156,8 +142,7 @@ void check_cuda_errors(const char *msg)
  * Manages GLOBAL MEMORY allocation and kernel timing.
  */
 float execute_gpu_workflow(float *h_x, float *h_y, int *h_gpu_res, 
-    int n, int k, int blks, int thr, size_t smem)
-{
+    int n, int k, int blks, int thr, size_t smem) {
     float *d_x, *d_y, gpu_ms;
     int *d_c;
     cudaEvent_t start, stop;
@@ -187,15 +172,12 @@ float execute_gpu_workflow(float *h_x, float *h_y, int *h_gpu_res,
 /**
  * Initializes data points and centroids on the HOST MEMORY.
  */
-void init_host_data(float *x, float *y, float *cx, float *cy, int n, int k)
-{
-    for (int i = 0; i < n; i++) 
-    { 
+void init_host_data(float *x, float *y, float *cx, float *cy, int n, int k) {
+    for (int i = 0; i < n; i++) { 
         x[i] = (float)(rand() % 100); 
         y[i] = (float)(rand() % 100); 
     }
-    for (int i = 0; i < k; i++) 
-    { 
+    for (int i = 0; i < k; i++) { 
         cx[i] = (float)(rand() % 100); 
         cy[i] = (float)(rand() % 100); 
     }
@@ -205,8 +187,7 @@ void init_host_data(float *x, float *y, float *cx, float *cy, int n, int k)
  * Executes the CPU baseline and returns timing in ms.
  */
 double run_cpu_baseline(float *x, float *y, int *res, float *cx, 
-    float *cy, int n, int k)
-{
+    float *cy, int n, int k) {
     clock_t start_time = clock();
     kmeans_cpu(x, y, res, cx, cy, n, k);
     return (double)(clock() - start_time) / CLOCKS_PER_SEC * 1000.0;
@@ -215,8 +196,7 @@ double run_cpu_baseline(float *x, float *y, int *res, float *cx,
 /**
  * Formats results as requested for the benchmark report.
  */
-void print_report(int blks, int thr, int n, int match, double cpu, float gpu)
-{
+void print_report(int blks, int thr, int n, int match, double cpu, float gpu) {
     printf("==============================================\n");
     printf("TEST CONFIGURATION: %d Blocks | %d Threads/Block\n", blks, thr);
     printf("TOTAL PARALLEL THREADS: %d\n", n);
@@ -232,8 +212,7 @@ void print_report(int blks, int thr, int n, int match, double cpu, float gpu)
  * Primary benchmark orchestrator.
  */
 //void run_benchmark(int blocks, int threads)
-void run_benchmark(int blocks, int threads, int totalPoints)
-{
+void run_benchmark(int blocks, int threads, int totalPoints) {
     int n = totalPoints;
     int k = 8;
     size_t smem = (size_t)threads * sizeof(float) * 2;
@@ -254,8 +233,7 @@ void run_benchmark(int blocks, int threads, int totalPoints)
     if (cudaMemcpyToSymbol(c_centroids_x, h_cx, k * sizeof(float)) != 
         cudaSuccess ||
         cudaMemcpyToSymbol(c_centroids_y, h_cy, k * sizeof(float)) != 
-        cudaSuccess)
-    {
+        cudaSuccess){
         printf("Error: CONSTANT MEMORY Copy Failed.\n");
         return;
     }
@@ -271,11 +249,9 @@ void run_benchmark(int blocks, int threads, int totalPoints)
     free(h_x); free(h_y); free(h_c_gpu); free(h_c_cpu);
 }
 
-int main(int argc, char** argv) 
-{
+int main(int argc, char** argv) {
     srand(time(NULL));
-    if (argc < 3) 
-    {
+    if (argc < 3) {
         printf("Usage: ./assignment <total_threads> <block_size>\n");
         return 1;
     }
