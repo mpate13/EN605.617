@@ -271,18 +271,6 @@ void run_benchmark(int blocks, int threads, int totalPoints)
     free(h_x); free(h_y); free(h_c_gpu); free(h_c_cpu);
 }
 
-// int main(int argc, char** argv) 
-// {
-//     srand(time(NULL));
-//     if (argc < 3 || atoi(argv[1]) <= 0 || atoi(argv[2]) <= 0) 
-//     {
-//         printf("Usage: ./assignment <blocks> <threads>\n");
-//         return 1;
-//     }
-//     run_benchmark(atoi(argv[1]), atoi(argv[2]));
-//     return 0;
-// }
-
 int main(int argc, char** argv) 
 {
     srand(time(NULL));

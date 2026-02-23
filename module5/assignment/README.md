@@ -14,7 +14,7 @@ I also provided a CPU-only version for benchmarking purposes to see GPU performa
 ### To run all tests
 This will run tests for:
 1. 64, 256, 1024 threads (1 block)
-2. 1, 10, 100 blocks (1024 threads)
+2. 1024, 128, 1 blocks-size (1M threads)
 ```bash
     ./run.sh
 ```
