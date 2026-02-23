@@ -23,6 +23,7 @@
  * L1-speed scratchpad to minimize high-latency Global Memory trips.
  * 4. REGISTERS: All mathematical calculations (distance, local IDs, loops)
  * are performed at peak frequency within the CUDA core.
+ * 5. HOST MEMORY
  */
 
 #define MAX_CLUSTERS 16
@@ -230,10 +231,13 @@ void print_report(int blks, int thr, int n, int match, double cpu, float gpu)
 /**
  * Primary benchmark orchestrator.
  */
-void run_benchmark(int blocks, int threads)
+//void run_benchmark(int blocks, int threads)
+void run_benchmark(int blocks, int threads, int totalPoints)
 {
-    int n = blocks * threads, k = 8;
+    int n = totalPoints;
+    int k = 8;
     size_t smem = (size_t)threads * sizeof(float) * 2;
+    //size_t smem = (size_t)threads * sizeof(float) * 2;
     float h_cx[MAX_CLUSTERS], h_cy[MAX_CLUSTERS];
 
     if (!validate_hardware(threads, smem, n)) return;
@@ -267,14 +271,36 @@ void run_benchmark(int blocks, int threads)
     free(h_x); free(h_y); free(h_c_gpu); free(h_c_cpu);
 }
 
+// int main(int argc, char** argv) 
+// {
+//     srand(time(NULL));
+//     if (argc < 3 || atoi(argv[1]) <= 0 || atoi(argv[2]) <= 0) 
+//     {
+//         printf("Usage: ./assignment <blocks> <threads>\n");
+//         return 1;
+//     }
+//     run_benchmark(atoi(argv[1]), atoi(argv[2]));
+//     return 0;
+// }
+
 int main(int argc, char** argv) 
 {
     srand(time(NULL));
-    if (argc < 3 || atoi(argv[1]) <= 0 || atoi(argv[2]) <= 0) 
+    if (argc < 3) 
     {
-        printf("Usage: ./assignment <blocks> <threads>\n");
+        printf("Usage: ./assignment <total_threads> <block_size>\n");
         return 1;
     }
-    run_benchmark(atoi(argv[1]), atoi(argv[2]));
+
+    int totalThreads = atoi(argv[1]);
+    int blockSize = atoi(argv[2]);
+
+    if (totalThreads <= 0 || blockSize <= 0) return 1;
+
+    // Ceiling division to find number of blocks
+    int numBlocks = (totalThreads + blockSize - 1) / blockSize;
+
+    // Pass the actual totalThreads as a third argument
+    run_benchmark(numBlocks, blockSize, totalThreads); 
     return 0;
 }
