@@ -3,6 +3,24 @@
 #include <cuda_runtime.h>
 #include <sys/time.h>
 
+
+/**
+ * * --- OVERVIEW ---
+ * This program demonstrates CUDA Streams and Events by running an asynchronous 
+ * encryption pipeline. It uses a "Producer-Consumer" model where one stream 
+ * generates encryption keys while another stream handles data transfers.
+ * * --- HOW IT WORKS ---
+ * 1. Stream A: Computes keys using a custom hashing algorithm.
+ * 2. Stream B: Copies data from CPU to GPU.
+ * 3. Events: Stream B waits for Stream A to finish keys before encrypting.
+ * 4. Timing: Uses CUDA Events to measure total GPU execution time.
+ * * --- TIMING NOTE: THE "RUN 0" LATENCY ---
+ * In the output, Run 0 is consistently ~0.3ms slower than Run 1. 
+ * I don't think this is an error, but a GPU warm up. The first pass includes 
+ * overhead for driver initialization and kernel loading. Run 1 represents 
+ * the true hardware performance.
+ */
+
 /**
  * --- CONSTANTS AND CONFIGURATION ---
  */
@@ -17,7 +35,7 @@
 #define NUM_RUNS 2
 
 /**
- * @brief Error handling macro for CUDA API calls.
+ * Error handling macro for CUDA API calls.
  * Prints the error string, file name, and line number before exiting.
  */
 #define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
@@ -30,7 +48,7 @@ inline void gpuAssert(cudaError_t code, const char *file, int line) {
 }
 
 /**
- * @brief Retrieves the current wall-clock time in milliseconds.
+ * Retrieves the current wall-clock time in milliseconds.
  * Useful for calculating CPU execution time and high-level benchmarking.
  * @return Current time as a double in milliseconds.
  */
@@ -41,7 +59,7 @@ double get_current_time_ms() {
 }
 
 /**
- * @brief CPU-based key generation logic for a single element.
+ * CPU-based key generation logic for a single element.
  * Applies a series of bitwise shifts and XORs using the Golden Ratio Prime 
  * to transform a seed and index into a pseudo-random key.
  * @param seed The base master seed.
@@ -60,7 +78,7 @@ unsigned int cpuParallelKeyGen(unsigned int seed, int idx) {
 // --- CUDA KERNELS ---
 
 /**
- * @brief GPU Kernel to generate encryption keys in parallel.
+ * GPU Kernel to generate encryption keys in parallel.
  * Each CUDA thread calculates its own key based on its global thread index.
  * @param deviceKeyBuffer Pointer to GPU memory where keys will be stored.
  * @param seed            The master seed used for the hash.
@@ -80,7 +98,7 @@ __global__ void kernelParallelKeyGenerator(unsigned int *deviceKeyBuffer,
 }
 
 /**
- * @brief GPU Kernel to encrypt data using generated keys.
+ * GPU Kernel to encrypt data using generated keys.
  * Performs ENCRYPT_ROUNDS of XOR and bitwise rotation on each element.
  * @param dataBuffer  Pointer to GPU memory containing the data to encrypt.
  * @param keyBuffer   Pointer to GPU memory containing the generated keys.
@@ -153,7 +171,8 @@ void runGpuPipeline(unsigned int *deviceData, unsigned int *hostData,
     cudaStream_t streamKey, streamEncrypt;
     cudaEvent_t startEvent, stopEvent, keyReadyEvent;
 
-    initCudaResources(&streamKey, &streamEncrypt, &startEvent, &stopEvent, &keyReadyEvent);
+    initCudaResources(&streamKey, &streamEncrypt, &startEvent, &stopEvent, 
+        &keyReadyEvent);
     
     // Start timing
     gpuErrchk(cudaEventRecord(startEvent, streamKey));
