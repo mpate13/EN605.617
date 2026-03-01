@@ -6,6 +6,8 @@ The program performs two main tasks:
 1. Key Generation: It uses a mathematical "hashing" algorithm to create unique encryption keys for every piece of data.
 2. Data Encryption: It uses those keys to scramble the data into a secure format using bitwise rotations and XOR operations.
 
+NOTE: There is also a CPU implementation included for timing tests
+
 ### Use of Streams
 1. Stream A (Key Generation): This lane is dedicated to calculating the unique encryption keys.
 2. Stream B (Data Handling): This lane works at the same time as Stream A to move data from memory onto the GPU. It is also responsible for the final encryption and moving the finished data back.
