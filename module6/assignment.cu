@@ -56,66 +56,56 @@ __global__ void consumerEncrypt(unsigned int *data, int n) {
 }
 
 // --- 3. PIPELINE WITH CROSS-STREAM SYNC ---
-void runGpuPipeline(unsigned int *d_d, unsigned int *h_d, 
-                    unsigned int *d_temp_k, size_t sz, int n, int b, 
-                    int t, float *ms) {
-    
-    cudaStream_t streamKey, streamEncrypt;
-    cudaEvent_t start, stop, keyReady;
+void initResources(cudaStream_t *s1, cudaStream_t *s2, cudaEvent_t *e1, cudaEvent_t *e2, cudaEvent_t *e3) {
+    gpuErrchk(cudaStreamCreate(s1));
+    gpuErrchk(cudaStreamCreate(s2));
+    gpuErrchk(cudaEventCreate(e1));
+    gpuErrchk(cudaEventCreate(e2));
+    gpuErrchk(cudaEventCreate(e3));
+}
+
+void cleanupResources(cudaStream_t s1, cudaStream_t s2, cudaEvent_t e1, cudaEvent_t e2, cudaEvent_t e3) {
+    cudaEventDestroy(e1); cudaEventDestroy(e2); cudaEventDestroy(e3);
+    cudaStreamDestroy(s1); cudaStreamDestroy(s2);
+}
+
+void prepareGlobalKey(unsigned int *d_temp_k, cudaStream_t stream, cudaEvent_t keyReady) {
     unsigned int h_key;
+    // Launch KeyGen and signal event
+    producerKeyGen<<<1, 1, 0, stream>>>(d_temp_k, MASTER_SEED);
+    gpuErrchk(cudaEventRecord(keyReady, stream));
 
-    // Initialize Streams and Events
-    gpuErrchk(cudaStreamCreate(&streamKey));
-    gpuErrchk(cudaStreamCreate(&streamEncrypt));
-    gpuErrchk(cudaEventCreate(&start)); 
-    gpuErrchk(cudaEventCreate(&stop));
-    gpuErrchk(cudaEventCreate(&keyReady)); // Used to signal between streams
-
-    // Record start time using the Key stream
-    gpuErrchk(cudaEventRecord(start, streamKey));
-    
-    // --- WORKFLOW 1: KEY GENERATION (Stream A) ---
-    producerKeyGen<<<1, 1, 0, streamKey>>>(d_temp_k, MASTER_SEED);
-    
-    // Record 'keyReady' event immediately after 
-    // the kernel is queued in streamKey
-    gpuErrchk(cudaEventRecord(keyReady, streamKey));
-
-    // To use the key in Constant Memory (dc_key), we must pull it to host first
-    gpuErrchk(cudaMemcpyAsync(&h_key, d_temp_k, sizeof(unsigned int), 
-    cudaMemcpyDeviceToHost, streamKey));
-    gpuErrchk(cudaStreamSynchronize(streamKey)); 
+    // Must sync to move generated key into __constant__ memory
+    gpuErrchk(cudaMemcpyAsync(&h_key, d_temp_k, sizeof(unsigned int), cudaMemcpyDeviceToHost, stream));
+    gpuErrchk(cudaStreamSynchronize(stream)); 
     gpuErrchk(cudaMemcpyToSymbol(dc_key, &h_key, sizeof(unsigned int)));
+}
 
-    // --- WORKFLOW 2: ENCRYPTION (Stream B) ---
-    // Start data transfer in Stream B 
-    // (Can overlap with Key Generation in Stream A)
-    gpuErrchk(cudaMemcpyAsync(d_d, h_d, sz, cudaMemcpyHostToDevice, 
-        streamEncrypt));
 
-    // CROSS-STREAM SYNC: Tell streamEncrypt to wait for keyReady 
-    // event from streamKey
-    // This allows the transfer to happen, but the kernel waits for the signal
-    gpuErrchk(cudaStreamWaitEvent(streamEncrypt, keyReady, 0));
+void runGpuPipeline(unsigned int *d_d, unsigned int *h_d, unsigned int *d_temp_k, 
+                    size_t sz, int n, int b, int t, float *ms) {
+    cudaStream_t sKey, sEnc;
+    cudaEvent_t start, stop, keyReady;
 
-    consumerEncrypt<<<b, t, 0, streamEncrypt>>>(d_d, n);
-    
-    // Move results back to host
-    gpuErrchk(cudaMemcpyAsync(h_d, d_d, sz, cudaMemcpyDeviceToHost, 
-        streamEncrypt));
+    initResources(&sKey, &sEnc, &start, &stop, &keyReady);
+    gpuErrchk(cudaEventRecord(start, sKey));
 
-    // Record stop on the final stream and sync
-    gpuErrchk(cudaEventRecord(stop, streamEncrypt));
+    // Stream A: Generate Key
+    prepareGlobalKey(d_temp_k, sKey, keyReady);
+
+    // Stream B: Overlap H2D transfer with Key Generation above
+    gpuErrchk(cudaMemcpyAsync(d_d, h_d, sz, cudaMemcpyHostToDevice, sEnc));
+
+    // Wait for Key, then Encrypt, then D2H
+    gpuErrchk(cudaStreamWaitEvent(sEnc, keyReady, 0));
+    consumerEncrypt<<<b, t, 0, sEnc>>>(d_d, n);
+    gpuErrchk(cudaMemcpyAsync(h_d, d_d, sz, cudaMemcpyDeviceToHost, sEnc));
+
+    gpuErrchk(cudaEventRecord(stop, sEnc));
     gpuErrchk(cudaEventSynchronize(stop)); 
-    
     gpuErrchk(cudaEventElapsedTime(ms, start, stop));
 
-    // Cleanup
-    cudaEventDestroy(start); 
-    cudaEventDestroy(stop); 
-    cudaEventDestroy(keyReady);
-    cudaStreamDestroy(streamKey); 
-    cudaStreamDestroy(streamEncrypt);
+    cleanupResources(sKey, sEnc, start, stop, keyReady);
 }
 
 // --- 4. CPU LOGIC ---
