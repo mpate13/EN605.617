@@ -114,8 +114,8 @@ __global__ void kernelEncryptData(unsigned int *dataBuffer,
  * encryption stream.
  */
 void initCudaResources(cudaStream_t *sKey, cudaStream_t *sEnc, 
-                       cudaEvent_t *start, cudaEvent_t *stop, c
-                       udaEvent_t *ready) {
+                       cudaEvent_t *start, cudaEvent_t *stop, 
+                       cudaEvent_t *ready) {
     gpuErrchk(cudaStreamCreate(sKey));
     gpuErrchk(cudaStreamCreate(sEnc));
     gpuErrchk(cudaEventCreate(start));
