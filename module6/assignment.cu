@@ -6,7 +6,7 @@
 /**
  * --- CONSTANTS AND CONFIGURATION ---
  */
-#define HASH_ROUNDS 100         
+#define HASH_ROUNDS 1000         
 #define ENCRYPT_ROUNDS 50
 #define MASTER_SEED 0xACE1
 #define GOLDEN_RATIO_PRIME 0x9e3779b9
