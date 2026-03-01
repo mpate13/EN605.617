@@ -6,17 +6,18 @@
 /**
  * --- CONSTANTS AND CONFIGURATION ---
  */
-#define HASH_ROUNDS 10         // Reduced rounds because it's now parallel per-element
+#define HASH_ROUNDS 100         
 #define ENCRYPT_ROUNDS 50
 #define MASTER_SEED 0xACE1
 #define GOLDEN_RATIO_PRIME 0x9e3779b9
 #define ROTATE_LEFT_BITS 3
 #define ROTATE_RIGHT_BITS 29
+#define HASH_SHIFT_LEFT 5
+#define HASH_SHIFT_RIGHT 3
 #define NUM_RUNS 2
 
 /**
- * gpuErrchk / gpuAssert:
- * Standard CUDA error wrapping.
+ * gpuErrchk / gpuAssert
  */
 #define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
 inline void gpuAssert(cudaError_t code, const char *file, int line) {
@@ -33,42 +34,39 @@ double get_current_time_ms() {
     return (double)tv.tv_sec * 1000.0 + (double)tv.tv_usec / 1000.0;
 }
 
+// --- FORWARD DECLARATION OR DEFINITION FIRST ---
+// Defining this before cpuEncrypt fixes the "undefined" error.
+
+unsigned int cpuParallelKeyGen(unsigned int seed, int idx) {
+    unsigned int val = seed + (unsigned int)idx;
+    for (int i = 0; i < HASH_ROUNDS; i++) {
+        // No magic numbers here!
+        val = ((val << HASH_SHIFT_LEFT) ^ (val >> HASH_SHIFT_RIGHT)) + GOLDEN_RATIO_PRIME;
+    }
+    return val;
+}
+
 // --- CUDA KERNELS ---
 
-/**
- * kernelParallelKeyGenerator:
- * Generates a unique key for every element in parallel.
- * This is much more "non-trivial" than a single-threaded generator.
- */
 __global__ void kernelParallelKeyGenerator(unsigned int *deviceKeyBuffer, 
                                            unsigned int seed, int numElements) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    
     if (idx < numElements) {
-        // Counter-based RNG: Start with seed + unique index
         unsigned int val = seed + idx;
-        
         for (int i = 0; i < HASH_ROUNDS; i++) {
-            // Mixing bits using shifts and the golden ratio prime
-            val = ((val << 5) ^ (val >> 3)) + GOLDEN_RATIO_PRIME;
+            // Using constants in kernel as well
+            val = ((val << HASH_SHIFT_LEFT) ^ (val >> HASH_SHIFT_RIGHT)) + GOLDEN_RATIO_PRIME;
         }
         deviceKeyBuffer[idx] = val; 
     }
 }
 
-/**
- * kernelEncryptData:
- * Massive parallel kernel that performs XOR-Rotate encryption.
- * Now reads a UNIQUE key per thread from global memory.
- */
 __global__ void kernelEncryptData(unsigned int *dataBuffer, 
                                   unsigned int *keyBuffer, int numElements) {
     int globalIdx = blockIdx.x * blockDim.x + threadIdx.x;
-    
     if (globalIdx < numElements) {
-        unsigned int key = keyBuffer[globalIdx]; // Unique key for this element
+        unsigned int key = keyBuffer[globalIdx];
         unsigned int val = dataBuffer[globalIdx];
-        
         for(int i = 0; i < ENCRYPT_ROUNDS; i++) {
             val ^= key;
             val = (val << ROTATE_LEFT_BITS) | (val >> ROTATE_RIGHT_BITS); 
@@ -94,10 +92,6 @@ void cleanupCudaResources(cudaStream_t s1, cudaStream_t s2,
     cudaStreamDestroy(s1); cudaStreamDestroy(s2);
 }
 
-/**
- * runGpuPipeline:
- * Overlaps Parallel Key Generation with Host-to-Device data transfer.
- */
 void runGpuPipeline(unsigned int *deviceData, unsigned int *hostData, 
                     unsigned int *deviceKeyBuffer, size_t bufferSize, 
                     int numElements, int numBlocks, int threadsPerBlock, 
@@ -108,27 +102,20 @@ void runGpuPipeline(unsigned int *deviceData, unsigned int *hostData,
 
     initCudaResources(&streamKey, &streamEncrypt, &startEvent, &stopEvent, &keyReadyEvent);
     
-    // Start timing
     gpuErrchk(cudaEventRecord(startEvent, streamKey));
 
-    // STREAM A: Generate ALL keys in parallel
     kernelParallelKeyGenerator<<<numBlocks, threadsPerBlock, 0, streamKey>>>(
         deviceKeyBuffer, MASTER_SEED, numElements);
     gpuErrchk(cudaEventRecord(keyReadyEvent, streamKey));
 
-    // STREAM B: Move data to GPU (Overlaps with Key Gen)
     gpuErrchk(cudaMemcpyAsync(deviceData, hostData, bufferSize, 
                               cudaMemcpyHostToDevice, streamEncrypt));
 
-    // BARRIER: Encryption cannot start until BOTH the data is there 
-    // AND the parallel keys are generated.
     gpuErrchk(cudaStreamWaitEvent(streamEncrypt, keyReadyEvent, 0));
     
-    // Execute Encryption
     kernelEncryptData<<<numBlocks, threadsPerBlock, 0, streamEncrypt>>>(
         deviceData, deviceKeyBuffer, numElements);
 
-    // Copy result back
     gpuErrchk(cudaMemcpyAsync(hostData, deviceData, bufferSize, 
                               cudaMemcpyDeviceToHost, streamEncrypt));
 
@@ -199,7 +186,7 @@ int main(int argc, char **argv) {
     
     gpuErrchk(cudaHostAlloc(&hostDataPinned, bufferSize, 0));
     gpuErrchk(cudaMalloc(&deviceData, bufferSize));
-    gpuErrchk(cudaMalloc(&deviceKeyBuffer, bufferSize)); // Key buffer is now large
+    gpuErrchk(cudaMalloc(&deviceKeyBuffer, bufferSize)); 
 
     for(int i = 0; i < NUM_RUNS; i++) {
         run_test_iteration(hostDataPinned, deviceData, cpuRef, 
