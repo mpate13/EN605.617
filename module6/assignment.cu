@@ -132,7 +132,10 @@ void run_test(unsigned int *h_d, unsigned int *d_d, unsigned int *cpu_d,
               unsigned int *d_k, size_t sz, int n, int b, int t, int run_id) {
     
     // Reset buffers
-    for (int i = 0; i < n; i++) h_d[i] = cpu_d[i] = (unsigned int)i;
+    for (int i = 0; i < n; i++) {
+        h_d[i] = (unsigned int)i;
+        cpu_d[i] = (unsigned int)i;
+    }
 
     double c_s = get_ms();
     cpuEncrypt(cpu_d, cpuKeyGen(MASTER_SEED), n); 
@@ -142,7 +145,11 @@ void run_test(unsigned int *h_d, unsigned int *d_d, unsigned int *cpu_d,
     runGpuPipeline(d_d, h_d, d_k, sz, n, b, t, &gpu_ms);
     
     int errs = 0;
-    for (int i = 0; i < n; i++) if (h_d[i] != cpu_d[i]) errs++;
+    for (int i = 0; i < n; i++) {
+        if (h_d[i] != cpu_d[i]) {
+            errs++;
+        }
+    }
     
     printf("[Run %d] Size: %d | BlockSize: %d | GridSize: %d\n", 
         run_id, n, t, b);
