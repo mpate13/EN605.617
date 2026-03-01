@@ -270,14 +270,14 @@ void run_test_iteration(unsigned int *hostData, unsigned int *deviceData,
  */
 int main(int argc, char **argv) {
     if (argc < 3) {
-        printf("Usage: %s <total_elements> <block_size>\n", argv[0]);
+        printf("Usage: %s <total_threads> <block_size>\n", argv[0]);
         return 1;
     }
     
-    int totalElements = atoi(argv[1]);
+    int totalThreads = atoi(argv[1]);
     int threadsPerBlock = atoi(argv[2]);
-    int numBlocks = (totalElements + threadsPerBlock - 1) / threadsPerBlock;
-    size_t bufferSize = totalElements * sizeof(unsigned int);
+    int numBlocks = (totalThreads + threadsPerBlock - 1) / threadsPerBlock;
+    size_t bufferSize = totalThreads * sizeof(unsigned int);
 
     unsigned int *hostDataPinned, *deviceData, *deviceKeyBuffer, *cpuRef;
     cpuRef = (unsigned int*)malloc(bufferSize);
@@ -289,7 +289,7 @@ int main(int argc, char **argv) {
 
     for(int i = 0; i < NUM_RUNS; i++) {
         run_test_iteration(hostDataPinned, deviceData, cpuRef, 
-                           deviceKeyBuffer, bufferSize, totalElements, 
+                           deviceKeyBuffer, bufferSize, totalThreads, 
                            numBlocks, threadsPerBlock, i);
     }
 
