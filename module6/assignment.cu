@@ -155,7 +155,6 @@ void run_test(unsigned int *h_d, unsigned int *d_d, unsigned int *cpu_d,
         run_id, n, t, b);
     printf("        Status: %s (%d errors) | CPU: %.2fms | GPU: %.2fms\n", 
            (errs == 0) ? "PASS" : "FAIL", errs, cpu_ms, gpu_ms);
-    printf("------------------------------------------------------------------\n");
 }
 
 int main(int argc, char **argv) {
@@ -176,8 +175,6 @@ int main(int argc, char **argv) {
     gpuErrchk(cudaHostAlloc(&h_data, sz, 0));
     gpuErrchk(cudaMalloc(&d_data, sz));
     gpuErrchk(cudaMalloc(&d_key, sizeof(unsigned int)));
-
-    printf("Executing CUDA Streams/Events Program (Multi-Stream Dependency Logic)\n\n");
 
     // Execute 2 separate runs as required by the rubric
     for(int i = 1; i <= 2; i++) {
