@@ -153,7 +153,7 @@ void run_test(unsigned int *h_d, unsigned int *d_d, unsigned int *cpu_d,
     
     printf("[Run %d] Size: %d | BlockSize: %d | GridSize: %d\n", 
         run_id, n, t, b);
-    printf("        Status: %s (%d errors) | CPU: %.2fms | GPU: %.2fms\n", 
+    printf("        Status: %s (%d errors) | CPU: %.2fms | GPU: %.2fms\n\n", 
            (errs == 0) ? "PASS" : "FAIL", errs, cpu_ms, gpu_ms);
 }
 
