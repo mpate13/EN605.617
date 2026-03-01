@@ -164,7 +164,7 @@ void run_test_iteration(unsigned int *hostData, unsigned int *deviceData,
         if (hostData[i] != cpuRef[i]) errorCount++;
     }
     
-    printf("[Run %d] Elements: %d | Blocks: %d | Threads: %d\n", 
+    printf("[Run %d] TotalThreads: %d | NumBlocks: %d | BlockSize: %d\n", 
            runId, numElements, numBlocks, threadsPerBlock);
     printf("        Status: %s (%d errors) | CPU: %.2fms | GPU: %.2fms\n\n", 
            (errorCount == 0) ? "PASS" : "FAIL", errorCount, cpuElapsedMs, gpuElapsedMs);
