@@ -44,3 +44,6 @@ Or, you can manually run it via:
     ./assignment brain.jpg
 
 ```
+
+## Proof of Run
+Artifacts for the program running can be found in `proof_of_run` directory
