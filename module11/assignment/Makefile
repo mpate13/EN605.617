@@ -1,12 +1,18 @@
-# Compiler
 CXX = g++
-# Compiler flags
 CXXFLAGS = -Wall -O3
-# Frameworks for macOS
-LDFLAGS = -framework OpenCL
-
 TARGET = assignment
 SRC = assignment.cpp
+
+# Check if we are on Apple or Linux
+UNAME_S := $(shell uname -s)
+
+ifeq ($(UNAME_S), Darwin)
+    # macOS settings
+    LDFLAGS = -framework OpenCL
+else
+    # Linux/AWS settings
+    LDFLAGS = -lOpenCL
+endif
 
 all: $(TARGET)
 
