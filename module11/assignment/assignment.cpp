@@ -25,6 +25,12 @@
 
 const int ARRAY_SIZE = 1024;
 
+// NOTE: A lot of the boilerplate OpenCL is inspired by the class examples
+
+///
+//  Create an OpenCL context on the first available platform using
+//  either a GPU or CPU depending on what is available.
+//
 cl_context CreateContext() {
     cl_uint numPlatforms;
     cl_platform_id platformId;
@@ -72,6 +78,9 @@ std::vector<cl_command_queue> CreateQueues(cl_context ctx,
     return queues;
 }
 
+///
+//  Create an OpenCL program from the kernel source file
+//
 cl_program CreateProgram(cl_context context, 
     cl_device_id device, const char* fileName) {
     cl_int errNum;
@@ -244,6 +253,15 @@ void PrintResultsAndCleanup(cl_command_queue queue, cl_mem outputMem,
     clReleaseEvent(profileEvent);
 }
 
+/**
+ * @brief Main entry point to demonstrate OpenCL vector transformations.
+ * * Orchestrates environment setup, memory allocation (including sub-buffers), 
+ * kernel execution, and performance profiling. Supports command-line 
+ * overrides for global and local work-group sizes.
+ * * @param argc Number of arguments.
+ * @param argv [1]: Global size, [2]: Local size.
+ * @return 0 on success; 1 on initialization or execution failure.
+ */
 int main(int argc, char** argv) {
     cl_mem m[3] = {0, 0, 0};
     size_t g_size = (argc > 1) ? std::stoul(argv[1]) : ARRAY_SIZE;
