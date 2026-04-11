@@ -96,7 +96,7 @@ __global__ void assignment_kernel(const float* device_pixels,
 
     for (int d = 0; d < IMAGE_DIMENSIONS; d++) {
         thread_local_pixels[d] = 
-            device_pixels[(thread_id + global_offset) * IMAGE_DIMENSIONS + d];
+            device_pixels[thread_id * IMAGE_DIMENSIONS + d];
     }
     __syncthreads();
 
@@ -124,7 +124,7 @@ __global__ void update_kernel(const float* device_pixels,
     for (int dim_idx = 0; dim_idx < IMAGE_DIMENSIONS; dim_idx++) {
         atomicAdd(&g_accumulated_centroids[assigned_cluster * IMAGE_DIMENSIONS 
             + dim_idx], 
-                  device_pixels[global_image_idx * IMAGE_DIMENSIONS + dim_idx]);
+                  device_pixels[thread_id * IMAGE_DIMENSIONS + dim_idx]);
     }
 }
 
@@ -239,8 +239,7 @@ void load_cifar_dataset(const char* file_path, float* host_pixels,
  */
 void dispatch_gpu_step(float* device_pixels, 
                         int* device_assignments, int batch_size, int clusters, 
-                        int threads, int total_n, cudaStream_t stream) {
-    int offset = (batch_size < total_n) ? (rand() % (total_n - batch_size)) : 0;
+                        int threads, int total_n, cudaStream_t stream, int offset) {
     int blocks = (batch_size + threads - 1) / threads;
     size_t shared_size = (size_t)threads * IMAGE_DIMENSIONS * sizeof(float);
 
@@ -253,9 +252,8 @@ void dispatch_gpu_step(float* device_pixels,
 
 /**
  * HOST FUNCTION: run_gpu_benchmark
- * Orchestrates the GPU training process. It allocates device memory, records 
- * high-resolution CUDA events to measure kernel execution time, and performs 
- * the data transfer from device back to host.
+ * Orchestrates the GPU training process. Uses Tiling to handle 1M+ images 
+ * without exceeding T4 VRAM limits.
  */
 float run_gpu_benchmark(float* host_pixels, int* gpu_results, int total_n, 
                         int k, int batch, int threads) {
@@ -264,22 +262,28 @@ float run_gpu_benchmark(float* host_pixels, int* gpu_results, int total_n,
     cudaEvent_t start, stop;
     cudaStream_t streams[NUM_STREAMS];
 
+    int chunk_size = (total_n > 100000) ? 100000 : total_n;
+
     for (int i = 0; i < NUM_STREAMS; i++) cudaStreamCreate(&streams[i]);
 
-    cudaMalloc(&device_pixel_buffer, (size_t)total_n * IMAGE_DIMENSIONS * sizeof(float));
+    cudaMalloc(&device_pixel_buffer, (size_t)chunk_size * IMAGE_DIMENSIONS * sizeof(float));
     cudaMalloc(&device_assignment_buffer, (size_t)total_n * sizeof(int));
     
     cudaEventCreate(&start); cudaEventCreate(&stop);
     cudaEventRecord(start);
 
     for (int i = 0; i < MAX_ITERATIONS; i++) {
-        int s_idx = i % NUM_STREAMS;
-        cudaMemcpyAsync(device_pixel_buffer, host_pixels, 
-                (size_t)total_n * IMAGE_DIMENSIONS * sizeof(float), 
+        for (int offset = 0; offset < total_n; offset += chunk_size) {
+            int current_chunk = (offset + chunk_size > total_n) ? (total_n - offset) : chunk_size;
+            int s_idx = (offset / chunk_size) % NUM_STREAMS;
+
+            cudaMemcpyAsync(device_pixel_buffer, host_pixels + (size_t)offset * IMAGE_DIMENSIONS, 
+                (size_t)current_chunk * IMAGE_DIMENSIONS * sizeof(float), 
                 cudaMemcpyHostToDevice, streams[s_idx]);
 
-        dispatch_gpu_step(device_pixel_buffer, 
-            device_assignment_buffer, batch, k, threads, total_n, streams[s_idx]);
+            dispatch_gpu_step(device_pixel_buffer, device_assignment_buffer, 
+                current_chunk, k, threads, total_n, streams[s_idx], offset);
+        }
     }
     cudaEventRecord(stop);
     cudaEventSynchronize(stop);
