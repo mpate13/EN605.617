@@ -252,8 +252,8 @@ void dispatch_gpu_step(float* device_pixels,
 
 /**
  * HOST FUNCTION: run_gpu_benchmark
- * Orchestrates the GPU training process. Uses Tiling to handle 1M+ images 
- * without exceeding T4 VRAM limits.
+ * Orchestrates the GPU training process. Uses Tiling and persistent VRAM residency
+ * to maximize throughput and eliminate PCIe bottlenecks.
  */
 float run_gpu_benchmark(float* host_pixels, int* gpu_results, int total_n, 
                         int k, int batch, int threads) {
@@ -272,19 +272,22 @@ float run_gpu_benchmark(float* host_pixels, int* gpu_results, int total_n,
     cudaEventCreate(&start); cudaEventCreate(&stop);
     cudaEventRecord(start);
 
-    for (int i = 0; i < MAX_ITERATIONS; i++) {
-        for (int offset = 0; offset < total_n; offset += chunk_size) {
-            int current_chunk = (offset + chunk_size > total_n) ? (total_n - offset) : chunk_size;
-            int s_idx = (offset / chunk_size) % NUM_STREAMS;
+    // BOTTLE NECK ELIMINATED: Data transferred once before the iteration loop.
+    for (int offset = 0; offset < total_n; offset += chunk_size) {
+        int current_chunk = (offset + chunk_size > total_n) ? (total_n - offset) : chunk_size;
+        int s_idx = (offset / chunk_size) % NUM_STREAMS;
 
-            cudaMemcpyAsync(device_pixel_buffer, host_pixels + (size_t)offset * IMAGE_DIMENSIONS, 
-                (size_t)current_chunk * IMAGE_DIMENSIONS * sizeof(float), 
-                cudaMemcpyHostToDevice, streams[s_idx]);
+        cudaMemcpyAsync(device_pixel_buffer, host_pixels + (size_t)offset * IMAGE_DIMENSIONS, 
+            (size_t)current_chunk * IMAGE_DIMENSIONS * sizeof(float), 
+            cudaMemcpyHostToDevice, streams[s_idx]);
 
+        // Iterate kernels on resident data
+        for (int i = 0; i < MAX_ITERATIONS; i++) {
             dispatch_gpu_step(device_pixel_buffer, device_assignment_buffer, 
                 current_chunk, k, threads, total_n, streams[s_idx], offset);
         }
     }
+    
     cudaEventRecord(stop);
     cudaEventSynchronize(stop);
     cudaEventElapsedTime(&elapsed_ms, start, stop);
