@@ -40,6 +40,7 @@
 #define MINIBATCH_ENABLED_VAL 1      
 #define FIRST_DATA_CHANNEL_OFFSET 1  
 #define FILENAME_BUFFER_SIZE 256
+#define NUM_STREAMS 4
 
 __managed__ float g_accumulated_centroids[MAX_CLUSTERS * IMAGE_DIMENSIONS];
 __managed__ int g_cluster_population[MAX_CLUSTERS];
@@ -196,7 +197,7 @@ void execute_cpu_baseline(const float* host_pixels, int* cpu_results,
  */
 void setup_gpu_centroids(float* host_pixel_buffer) {
     size_t total_elements = MAX_CLUSTERS * IMAGE_DIMENSIONS;
-    for (int i = 0; i < total_elements; i++) {
+    for (size_t i = 0; i < total_elements; i++) {
         g_accumulated_centroids[i] = host_pixel_buffer[i];
     }
 }
@@ -238,17 +239,16 @@ void load_cifar_dataset(const char* file_path, float* host_pixels,
  */
 void dispatch_gpu_step(float* device_pixels, 
                         int* device_assignments, int batch_size, int clusters, 
-                        int threads, int total_n) {
+                        int threads, int total_n, cudaStream_t stream) {
     int offset = (batch_size < total_n) ? (rand() % (total_n - batch_size)) : 0;
     int blocks = (batch_size + threads - 1) / threads;
     size_t shared_size = (size_t)threads * IMAGE_DIMENSIONS * sizeof(float);
 
-    assignment_kernel<<<blocks, threads, shared_size>>>(device_pixels, 
+    assignment_kernel<<<blocks, threads, shared_size, stream>>>(device_pixels, 
         g_accumulated_centroids, device_assignments, batch_size, clusters, offset);
-    update_kernel<<<blocks, threads>>>(device_pixels, device_assignments, 
+    update_kernel<<<blocks, threads, 0, stream>>>(device_pixels, device_assignments, 
         batch_size, offset);
-    finalize_centroids_kernel<<<1, clusters>>>(clusters);
-    cudaDeviceSynchronize();
+    finalize_centroids_kernel<<<1, clusters, 0, stream>>>(clusters);
 }
 
 /**
@@ -262,25 +262,33 @@ float run_gpu_benchmark(float* host_pixels, int* gpu_results, int total_n,
     float *device_pixel_buffer, elapsed_ms;
     int *device_assignment_buffer;
     cudaEvent_t start, stop;
+    cudaStream_t streams[NUM_STREAMS];
 
-    cudaMalloc(&device_pixel_buffer, total_n * IMAGE_DIMENSIONS * sizeof(float));
-    cudaMalloc(&device_assignment_buffer, total_n * sizeof(int));
-    cudaMemcpy(device_pixel_buffer, host_pixels, 
-            total_n * IMAGE_DIMENSIONS * sizeof(float), cudaMemcpyHostToDevice);
+    for (int i = 0; i < NUM_STREAMS; i++) cudaStreamCreate(&streams[i]);
 
+    cudaMalloc(&device_pixel_buffer, (size_t)total_n * IMAGE_DIMENSIONS * sizeof(float));
+    cudaMalloc(&device_assignment_buffer, (size_t)total_n * sizeof(int));
+    
     cudaEventCreate(&start); cudaEventCreate(&stop);
     cudaEventRecord(start);
 
     for (int i = 0; i < MAX_ITERATIONS; i++) {
+        int s_idx = i % NUM_STREAMS;
+        cudaMemcpyAsync(device_pixel_buffer, host_pixels, 
+                (size_t)total_n * IMAGE_DIMENSIONS * sizeof(float), 
+                cudaMemcpyHostToDevice, streams[s_idx]);
+
         dispatch_gpu_step(device_pixel_buffer, 
-            device_assignment_buffer, batch, k, threads, total_n);
+            device_assignment_buffer, batch, k, threads, total_n, streams[s_idx]);
     }
     cudaEventRecord(stop);
     cudaEventSynchronize(stop);
     cudaEventElapsedTime(&elapsed_ms, start, stop);
     
-    cudaMemcpy(gpu_results, device_assignment_buffer, total_n * sizeof(int), 
+    cudaMemcpy(gpu_results, device_assignment_buffer, (size_t)total_n * sizeof(int), 
         cudaMemcpyDeviceToHost);
+
+    for (int i = 0; i < NUM_STREAMS; i++) cudaStreamDestroy(streams[i]);
     cudaFree(device_pixel_buffer); cudaFree(device_assignment_buffer);
     return elapsed_ms;
 }
@@ -385,7 +393,7 @@ void allocate_host_resources(int total_image_count,
     size_t pixel_size = (size_t)total_image_count * IMAGE_DIMENSIONS * sizeof(float);
     size_t result_size = (size_t)total_image_count * sizeof(int);
 
-    *pixels = (float*)malloc(pixel_size);
+    cudaHostAlloc(pixels, pixel_size, cudaHostAllocDefault);
     *gpu_res = (int*)malloc(result_size);
     *cpu_res = (int*)malloc(result_size);
 
@@ -411,7 +419,7 @@ void initialize_dataset(float* host_pixel_buffer, int total_image_count) {
  * Ensures all heap memory is properly released.
  */
 void cleanup_host_resources(float* pixels, int* gpu_res, int* cpu_res) {
-    if (pixels) free(pixels);
+    if (pixels) cudaFreeHost(pixels);
     if (gpu_res) free(gpu_res);
     if (cpu_res) free(cpu_res);
 }
