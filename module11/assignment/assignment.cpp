@@ -154,6 +154,7 @@ void Cleanup(cl_context context, std::vector<cl_command_queue> commandQueues,
 int main(int argc, char** argv) {
     cl_int err;
     cl_mem m[3] = {0, 0, 0};
+    // global size = total threads, l_size = block size
     size_t g_size = (argc > 1) ? std::stoul(argv[1]) : ARRAY_SIZE;
     size_t l_size = (argc > 2) ? std::stoul(argv[2]) : 64;
 
