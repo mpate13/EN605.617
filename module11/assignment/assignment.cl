@@ -6,10 +6,12 @@ __kernel void transform_kernel(__global const float2* input,
                                const float scale,
                                const float2 translation)
 {
-    // Get the unique ID for this work-item
+    // Absolute ID (0 for first call, 512 for second call)
     int id = get_global_id(0);
     
-    // Process both X and Y in a single vectorized operation
+    // Relative ID (Always 0-511 relative to the buffer provided)
+    int out_idx = id - get_global_offset(0);
+    
     float2 position = input[id];
-    output[id] = (position * scale) + translation;
+    output[out_idx] = (position * scale) + translation;
 }
