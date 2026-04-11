@@ -16,9 +16,9 @@
  * CONTINUATION FROM MODULE 5:
  * This implementation evolves the basic GPU K-Means from Module 5 by 
  * transitioning to a multi-tiered memory hierarchy:
- * 1. CONSTANT MEMORY: Cached centroid broadcasts.
+ * 1. READ-ONLY CACHE: Replaces __constant__ to bypass 64KB hardware limits.
  * 2. SHARED MEMORY: L1-speed staging for 3072-dimension vectors.
- * 3. MANAGED MEMORY: Unified coherence for atomic updates.
+ * 3. MANAGED MEMORY: Unified coherence for atomic updates and centroids.
  *
  * EXPECTED OUTPUT:
  * 1. CONSOLE: Reports execution time for CPU (baseline) and GPU, followed by 
@@ -41,7 +41,6 @@
 #define FIRST_DATA_CHANNEL_OFFSET 1  
 #define FILENAME_BUFFER_SIZE 256
 
-__constant__ float c_centroids[MAX_CLUSTERS * IMAGE_DIMENSIONS];
 __managed__ float g_accumulated_centroids[MAX_CLUSTERS * IMAGE_DIMENSIONS];
 __managed__ int g_cluster_population[MAX_CLUSTERS];
 
@@ -49,17 +48,19 @@ __managed__ int g_cluster_population[MAX_CLUSTERS];
 /**
  * DEVICE FUNCTION: find_nearest_cluster
  * Performs an L2-norm (Euclidean) distance comparison between a single image 
- * vector and all available cluster centroids stored in __constant__ memory.
+ * vector and all available cluster centroids using the Read-Only Cache.
  * Returns the index of the cluster with the minimum distance.
  */
-__device__ int find_nearest_cluster(const float* image_pixels, int num_clusters) {
+__device__ int find_nearest_cluster(const float* image_pixels, 
+                                    const float* __restrict__ centroids, 
+                                    int num_clusters) {
     float minimum_distance = FLT_MAX;
     int closest_cluster_id = 0;
 
     for (int cluster_idx = 0; cluster_idx < num_clusters; cluster_idx++) {
         float current_distance = 0.0f;
         for (int dim_idx = 0; dim_idx < IMAGE_DIMENSIONS; dim_idx++) {
-            float difference = image_pixels[dim_idx] - c_centroids[cluster_idx 
+            float difference = image_pixels[dim_idx] - centroids[cluster_idx 
                 * IMAGE_DIMENSIONS + dim_idx];
             current_distance += (difference * difference);
         }
@@ -79,6 +80,7 @@ __device__ int find_nearest_cluster(const float* image_pixels, int num_clusters)
  * before calling the distance calculation logic.
  */
 __global__ void assignment_kernel(const float* device_pixels, 
+                                    const float* device_centroids,
                                     int* device_assignments, 
                                     int image_count, 
                                     int num_clusters, 
@@ -98,7 +100,7 @@ __global__ void assignment_kernel(const float* device_pixels,
     __syncthreads();
 
     device_assignments[thread_id + global_offset] = 
-        find_nearest_cluster(thread_local_pixels, num_clusters);
+        find_nearest_cluster(thread_local_pixels, device_centroids, num_clusters);
 }
 
 /**
@@ -190,21 +192,13 @@ void execute_cpu_baseline(const float* host_pixels, int* cpu_results,
 /**
  * HOST FUNCTION: setup_gpu_centroids
  * Initializes the clustering process by selecting the first K images 
- * from the dataset to serve as the starting centroids. These are 
- * copied into the GPU's __constant__ memory for high-speed access.
+ * from the dataset to serve as the starting centroids. 
  */
 void setup_gpu_centroids(float* host_pixel_buffer) {
-    float initial_centroids[MAX_CLUSTERS * IMAGE_DIMENSIONS];
     size_t total_elements = MAX_CLUSTERS * IMAGE_DIMENSIONS;
-    
-    // Use the first K images as initial seeds
     for (int i = 0; i < total_elements; i++) {
-        initial_centroids[i] = host_pixel_buffer[i];
+        g_accumulated_centroids[i] = host_pixel_buffer[i];
     }
-    
-    // Copy to __constant__ memory symbol
-    cudaMemcpyToSymbol(c_centroids, initial_centroids, 
-                       total_elements * sizeof(float));
 }
 
 /**
@@ -224,7 +218,6 @@ void load_cifar_dataset(const char* file_path, float* host_pixels,
 
     unsigned char row_buffer[CIFAR_BINARY_ROW_SIZE];
     for (int i = 0; i < num_images; i++) {
-        // Checking return value to eliminate warning #1650-D
         size_t bytes_read = fread(row_buffer, 1, CIFAR_BINARY_ROW_SIZE, file_pointer);
         if (bytes_read < CIFAR_BINARY_ROW_SIZE) break;
 
@@ -241,7 +234,7 @@ void load_cifar_dataset(const char* file_path, float* host_pixels,
  * HOST FUNCTION: dispatch_gpu_step
  * Executes a single K-Means training iteration. It handles the random sampling 
  * for mini-batching, calculates thread block counts, launches the three 
- * core kernels, and updates the Constant Memory centroid cache.
+ * core kernels.
  */
 void dispatch_gpu_step(float* device_pixels, 
                         int* device_assignments, int batch_size, int clusters, 
@@ -251,13 +244,11 @@ void dispatch_gpu_step(float* device_pixels,
     size_t shared_size = (size_t)threads * IMAGE_DIMENSIONS * sizeof(float);
 
     assignment_kernel<<<blocks, threads, shared_size>>>(device_pixels, 
-        device_assignments, batch_size, clusters, offset);
+        g_accumulated_centroids, device_assignments, batch_size, clusters, offset);
     update_kernel<<<blocks, threads>>>(device_pixels, device_assignments, 
         batch_size, offset);
     finalize_centroids_kernel<<<1, clusters>>>(clusters);
     cudaDeviceSynchronize();
-    cudaMemcpyToSymbol(c_centroids, g_accumulated_centroids, 
-        clusters * IMAGE_DIMENSIONS * sizeof(float));
 }
 
 /**
@@ -308,7 +299,6 @@ void parse_arguments(int argc, char** argv, int* total_image_count,
     *batch_size = *total_image_count;
     *mode_string = "standard";
 
-    // Check optional arguments for the explicit --mini-batch flag
     for (int i = 3; i < argc; i++) {
         if (strcmp(argv[i], "--mini-batch") == 0) {
             *batch_size = MINI_BATCH_SIZE_DEFAULT;
@@ -443,7 +433,6 @@ int main(int argc, char** argv) {
     parse_arguments(argc, argv, &total_image_count, &threads_per_block, 
                     &current_batch_size, &execution_mode);
 
-    // Resource Setup
     float *host_pixel_buffer = NULL;
     int *gpu_results = NULL;
     int *cpu_results = NULL;
@@ -453,18 +442,15 @@ int main(int argc, char** argv) {
 
     initialize_dataset(host_pixel_buffer, total_image_count);
 
-    // Execution & Benchmarking
     run_performance_comparison(host_pixel_buffer, cpu_results, 
                                gpu_results, total_image_count, 
                                threads_per_block, current_batch_size, 
                                execution_mode);
 
-    // Output Generation
     export_benchmark_results(cpu_results, gpu_results, 
                              total_image_count, threads_per_block, 
                              execution_mode);
 
-    // Resource Teardown
     cleanup_host_resources(host_pixel_buffer, gpu_results, cpu_results);
 
     return SUCCESS_EXIT_CODE;
