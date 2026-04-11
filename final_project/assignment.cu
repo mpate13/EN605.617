@@ -76,21 +76,29 @@ __device__ int find_nearest_cluster(const float* image_pixels,
 /**
  * KERNEL: assignment_kernel
  * Assignment Phase: Assigns images to clusters. 
- * Manual Shared Memory staging has been removed to allow the hardware 
- * L1 and Read-Only Cache to handle the high-dimensional vectors, 
- * improving occupancy and throughput on modern GPUs.
+ * To minimize Global Memory transactions, this kernel stages the 
+ * high-dimensional image data into Shared Memory (shared_pixel_buffer)
+ * before calling the distance calculation logic.
  */
-__global__ void assignment_kernel(const float* __restrict__ device_pixels, 
+__global__ void assignment_kernel(const float* device_pixels, 
                                     const float* device_centroids,
                                     int* device_assignments, 
                                     int image_count, 
                                     int num_clusters, 
                                     int global_offset) {
     int thread_id = blockIdx.x * blockDim.x + threadIdx.x;
+    int local_id = threadIdx.x;
     if (thread_id >= image_count) return;
 
-    // Direct access to global memory utilizing hardware caching
-    const float* thread_local_pixels = &device_pixels[thread_id * IMAGE_DIMENSIONS];
+    extern __shared__ float shared_pixel_buffer[];
+    float* thread_local_pixels = 
+            &shared_pixel_buffer[local_id * IMAGE_DIMENSIONS];
+
+    for (int d = 0; d < IMAGE_DIMENSIONS; d++) {
+        thread_local_pixels[d] = 
+            device_pixels[thread_id * IMAGE_DIMENSIONS + d];
+    }
+    __syncthreads();
 
     device_assignments[thread_id + global_offset] = 
         find_nearest_cluster(thread_local_pixels, device_centroids, num_clusters);
@@ -233,9 +241,9 @@ void dispatch_gpu_step(float* device_pixels,
                         int* device_assignments, int batch_size, int clusters, 
                         int threads, int total_n, cudaStream_t stream, int offset) {
     int blocks = (batch_size + threads - 1) / threads;
+    size_t shared_size = (size_t)threads * IMAGE_DIMENSIONS * sizeof(float);
 
-    // shared_size is now 0 as manual staging was removed
-    assignment_kernel<<<blocks, threads, 0, stream>>>(device_pixels, 
+    assignment_kernel<<<blocks, threads, shared_size, stream>>>(device_pixels, 
         g_accumulated_centroids, device_assignments, batch_size, clusters, offset);
     update_kernel<<<blocks, threads, 0, stream>>>(device_pixels, device_assignments, 
         batch_size, offset);
