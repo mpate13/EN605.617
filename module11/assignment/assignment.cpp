@@ -100,24 +100,23 @@ cl_program CreateProgram(cl_context context,
 ///
 //  Create memory objects: [0]=Input, [1]=Output Parent, [2]=Sub-Buffer
 //
-bool CreateMemObjects(cl_context context, cl_mem memObjects[3], size_t g_size) {
+bool CreateMemObjects(cl_context context, cl_device_id device, cl_mem memObjects[3], size_t g_size) {
     cl_int err;
-    size_t full_bytes = g_size * 2 * sizeof(float);
-    size_t half_bytes = g_size * sizeof(float); // Must be alignment multiple
-
-    memObjects[0] = clCreateBuffer(context, CL_MEM_READ_ONLY, 
-                                   full_bytes, NULL, &err);
-    if (err != CL_SUCCESS) {
-        return false;
-    }
-
-    memObjects[1] = clCreateBuffer(context, CL_MEM_READ_WRITE, 
-                                   full_bytes, NULL, &err);
-    if (err != CL_SUCCESS) {
-        return false;
-    }
+    cl_uint alignment;
     
-    cl_buffer_region region = { half_bytes, half_bytes };
+    clGetDeviceInfo(device, CL_DEVICE_MEM_BASE_ADDR_ALIGN, sizeof(cl_uint), &alignment, NULL);
+    
+    size_t alignBytes = alignment / 8; 
+
+    size_t full_bytes = g_size * 2 * sizeof(float);
+    size_t requested_half = g_size * sizeof(float);
+
+    size_t aligned_offset = (requested_half / alignBytes) * alignBytes;
+
+    memObjects[0] = clCreateBuffer(context, CL_MEM_READ_ONLY, full_bytes, NULL, &err);
+    memObjects[1] = clCreateBuffer(context, CL_MEM_READ_WRITE, full_bytes, NULL, &err);
+    
+    cl_buffer_region region = { aligned_offset, full_bytes - aligned_offset };
     memObjects[2] = clCreateSubBuffer(memObjects[1], CL_MEM_WRITE_ONLY,
                                       CL_BUFFER_CREATE_TYPE_REGION, 
                                       &region, &err);
