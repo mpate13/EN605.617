@@ -268,7 +268,8 @@ int main(int argc, char** argv) {
     clEnqueueWriteBuffer(qs[0], m[0], CL_TRUE, 0, g_size * 2 * sizeof(float), 
         h_in.data(), 0, 0, 0);
     
-    if (SetStaticKernelArgs(kernel, m[0], 5.0f, {{20.0f, 20.0f}}) != CL_SUCCESS) {
+    if (SetStaticKernelArgs(kernel, m[0], 5.0f, 
+        {{20.0f, 20.0f}}) != CL_SUCCESS) {
         return 1;
     }
 
@@ -279,7 +280,6 @@ int main(int argc, char** argv) {
             return 1;
     }
 
-    // Final Report
     PrintResultsAndCleanup(qs[0], m[1], profileEvent, g_size);
 
     Cleanup(ctx, qs, prog, kernel, m);
