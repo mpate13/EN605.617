@@ -12,7 +12,7 @@ def compare_results(cpu_csv, gpu_csv):
     # Merge on ImageID to ensure we are comparing the same images
     comparison_df = pd.merge(cpu_df, gpu_df, on='ImageID')
     
-    # 1. Calculation of Accuracy (Match Rate)
+    # Calculation of Accuracy (Match Rate)
     matches = (comparison_df['CPU_Cluster'] == comparison_df['GPU_Cluster']).sum()
     total = len(comparison_df)
     accuracy = (matches / total) * 100
@@ -22,7 +22,7 @@ def compare_results(cpu_csv, gpu_csv):
     print(f"Exact Matches:         {matches}")
     print(f"Match Rate (Accuracy): {accuracy:.2f}%")
 
-    # 2. Confusion Matrix (Where did the GPU diverge?)
+    # Confusion Matrix (Where did the GPU diverge?)
     # This helps see if certain clusters are being swapped or merged
     plt.figure(figsize=(10, 8))
     confusion_matrix = pd.crosstab(comparison_df['CPU_Cluster'], 
