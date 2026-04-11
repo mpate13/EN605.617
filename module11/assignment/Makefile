@@ -1,5 +1,5 @@
 CXX = g++
-CXXFLAGS = -Wall -O3 -DCL_TARGET_OPENCL_VERSION=300
+CXXFLAGS = -Wall -O3
 TARGET = assignment
 SRC = assignment.cpp
 
