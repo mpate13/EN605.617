@@ -39,6 +39,8 @@ cl_context CreateContext() {
 
 ///
 //  Create command queues for ALL devices found in the context
+// note: had to use a different clCreateCommandQueue to 
+// eliminate deprication warnings
 //
 std::vector<cl_command_queue> CreateQueues(cl_context ctx, 
                                           std::vector<cl_device_id> &devs) {
@@ -51,8 +53,10 @@ std::vector<cl_command_queue> CreateQueues(cl_context ctx,
 
     std::vector<cl_command_queue> queues;
     for (int i = 0; i < num; i++) {
-        // Added CL_QUEUE_PROFILING_ENABLE to allow timing
-        cl_command_queue q = clCreateCommandQueue(ctx, devs[i], CL_QUEUE_PROFILING_ENABLE, NULL);
+        // Modern OpenCL 2.0+ way to create a queue
+        cl_queue_properties props[] = { CL_QUEUE_PROPERTIES, CL_QUEUE_PROFILING_ENABLE, 0 };
+        cl_command_queue q = clCreateCommandQueueWithProperties(ctx, devs[i], props, NULL);
+        
         if (q) queues.push_back(q);
     }
     return queues;
@@ -167,7 +171,8 @@ int main(int argc, char** argv) {
     std::vector<float> h_in(g_size * 2, 1.0f);
     size_t bytes = g_size * 2 * sizeof(float);
 
-    if (!CreateMemObjects(ctx, m, g_size)) {
+    // FIXED: Added devs[0] as the second argument
+    if (!CreateMemObjects(ctx, devs[0], m, g_size)) {
         Cleanup(ctx, qs, prog, kernel, m);
         return 1;
     }
