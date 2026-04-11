@@ -188,27 +188,51 @@ void execute_cpu_baseline(const float* host_pixels, int* cpu_results,
 }
 
 /**
- * HOST FUNCTION: load_cifar_dataset
- * Loads the CIFAR-10 binary dataset from disk. It skips the class label byte, 
- * extracts the RGB pixel data, and normalizes values to a [0.0, 1.0] 
- * float range. If the file is missing, it populates the buffer 
- * with random values.
+ * HOST FUNCTION: setup_gpu_centroids
+ * Initializes the clustering process by selecting the first K images 
+ * from the dataset to serve as the starting centroids. These are 
+ * copied into the GPU's __constant__ memory for high-speed access.
+ */
+void setup_gpu_centroids(float* host_pixel_buffer) {
+    float initial_centroids[MAX_CLUSTERS * IMAGE_DIMENSIONS];
+    size_t total_elements = MAX_CLUSTERS * IMAGE_DIMENSIONS;
+    
+    // Use the first K images as initial seeds
+    for (int i = 0; i < total_elements; i++) {
+        initial_centroids[i] = host_pixel_buffer[i];
+    }
+    
+    // Copy to __constant__ memory symbol
+    cudaMemcpyToSymbol(c_centroids, initial_centroids, 
+                       total_elements * sizeof(float));
+}
+
+/**
+ * UPDATED HOST FUNCTION: load_cifar_dataset
+ * Now handles the return value of fread to satisfy compiler warnings.
  */
 void load_cifar_dataset(const char* file_path, float* host_pixels, 
                         int num_images) {
     FILE* file_pointer = fopen(file_path, "rb");
+    
     if (!file_pointer) {
+        printf("Warning: %s not found. Using random data.\n", file_path);
         for (int i = 0; i < num_images * IMAGE_DIMENSIONS; i++) 
             host_pixels[i] = (float)rand() / (float)RAND_MAX;
         return;
     }
+
     unsigned char row_buffer[CIFAR_BINARY_ROW_SIZE];
     for (int i = 0; i < num_images; i++) {
-        fread(row_buffer, 1, CIFAR_BINARY_ROW_SIZE, file_pointer);
-        for (int d = 0; d < IMAGE_DIMENSIONS; d++) 
+        // Checking return value to eliminate warning #1650-D
+        size_t bytes_read = fread(row_buffer, 1, CIFAR_BINARY_ROW_SIZE, file_pointer);
+        if (bytes_read < CIFAR_BINARY_ROW_SIZE) break;
+
+        for (int d = 0; d < IMAGE_DIMENSIONS; d++) {
             host_pixels[i * IMAGE_DIMENSIONS + d] = 
                 (float)row_buffer[d + FIRST_DATA_CHANNEL_OFFSET] / 
                 NORMALIZE_PIXEL_VALUE;
+        }
     }
     fclose(file_pointer);
 }
